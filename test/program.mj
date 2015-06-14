@@ -5,9 +5,10 @@ class A{
 	const int pi = 3, e = 2;
 class B extends A{
 	int i; int x[];
-	int getValue(int a) int b; bool c;
+	int getValue(int a) int b; bool c;	
 { 
-	return this.i + this.x[0] + a; }
+	int getValue(int a) int b; bool c;
+	{ return this.i + this.x[0] + a; }
 }
 class C extends B{
 	A theA;
@@ -32,5 +33,9 @@ class C extends B{
 			i++;
 		}
 		print(c.getValue(c.theA.x[0]));
+		
+		if ( 1 < 2 ) 
+			if ( 2 < 3 )
+				i = 2;
 	}
 }

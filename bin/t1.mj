@@ -1,0 +1,14 @@
+program t1
+	int i;
+	const int c = 5;
+	
+	class C {
+	
+	}
+
+{
+	void main() {
+	
+	}
+
+}

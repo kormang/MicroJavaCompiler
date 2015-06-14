@@ -1,0 +1,195 @@
+//import statements
+
+package net.etfbl.kki;
+
+import java_cup.runtime.*;
+import rs.etf.pp1.symboltable.Tab;
+import rs.etf.pp1.symboltable.concepts.*;
+
+//action & parser code
+
+parser code {:
+	
+	public void report_error(String message, Object info){
+		StringBuilder builder = new StringBuilder(message);
+		if(info instanceof Symbol){
+			builder.append(" in line ").append(((Symbol)info).left);
+		}
+		System.out.println(builder.toString());
+	}
+	
+	public void report_fatal_error(String message, Object info) throws java.lang.Exception{
+		done_parsing();
+		report_error(message, info);
+	}
+	
+	public void syntax_error(Symbol cur_token){
+		report_error("\nSyntax error", cur_token);
+	}
+	
+	public void unrecovered_syntax_error(Symbol cur_token) throws java.lang.Exception{
+		report_fatal_error("\nFatal error!", cur_token);
+	}
+	
+	public void report_info(String message, Object info){
+		StringBuilder builder = new StringBuilder(message);
+		if(info instanceof Symbol){
+			builder.append(" in line ").append(((Symbol)info).left);
+		}
+		System.out.println(builder.toString());
+	}
+
+:}
+
+scan with {:
+	Symbol symbol = this.getScanner().next_token();
+	if(symbol != null && symbol.value != null){
+		System.out.println(symbol.toString() + " " + symbol.value.toString());
+	}
+	return symbol;
+:}
+
+init with {:
+
+:}
+
+//keyword terminals
+terminal PROGRAM, PRINT, RETURN, VOID, CLASS, EXTENDS, NEW, IF, ELSE, WHILE, READ ;
+terminal BREAK, DO, CONST ;
+
+//operator terminals
+terminal LOGICAL_OR, LOGICAL_AND, INCREAMENT, DECREAMENT, EQUAL, NOT_EQUAL, GREATER ;
+terminal GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, PLUS, MINUS, ASSIGNMENT, TIMES, DEVIDE ;
+terminal MOD, SEMI, COMMA, LPAREN, RPAREN, LBRACE, RBRACE, RBRACKET, LBRACKET, DOT ;
+
+//literal terminals
+terminal NUMBER_LITERAL, BOOL_LITERAL, CHAR_LITERAL, STRING_LITERAL ;
+
+//other terminals
+terminal IDENT, INVALID ;
+
+//non-terminals:
+non terminal Program, ProgParamDeclList, MethodDeclList, ProgParamDeclPart, ConstDecl, VarDecl, ClassDecl, Type, ConstDeclNames, ConstDeclName ;
+non terminal Literal, VarDeclList, VarDeclNames, VarDeclName, extendsStm, ClassMemberDeclList, ClassMemberDecl, MethodDecl, MethodDeclRest ;
+non terminal FormPars;
+non terminal FormParList, FormPar ;
+non terminal Designator, Expr, Condition, Statement, StatementList, OtherStatement, OpenIf, ClosedIf ;
+non terminal ActPars, CondTerm, CondFact, Relop, ExprRest, Addop, Term, Mulop, Factor ;
+non terminal DesignatorRest, DesignatorRestPart ;
+non terminal LoopHeader ;
+
+non terminal Obj ProgName ;
+
+//grammar
+
+Program ::= PROGRAM ProgName:p ProgParamDeclList LBRACE MethodDeclList RBRACE
+{:
+	parser.report_info("Program finished " + p, p);
+	Tab.chainLocalSymbols(p);
+	Tab.closeScope();
+:};
+
+ProgName ::= IDENT:pn {:
+	parser.report_info("Program name is " + pn, pn);
+:}
+;
+
+ProgParamDeclList ::= ProgParamDeclList ProgParamDeclPart | /* epsilon */ ;
+ProgParamDeclPart ::= ConstDecl | VarDecl | ClassDecl ;
+
+ConstDecl ::= CONST Type ConstDeclNames SEMI ;
+ConstDeclNames ::= ConstDeclNames COMMA ConstDeclName | ConstDeclName ;
+ConstDeclName ::= IDENT ASSIGNMENT Literal ;
+
+
+Literal ::= NUMBER_LITERAL | BOOL_LITERAL | CHAR_LITERAL | STRING_LITERAL ;
+
+VarDeclList ::= VarDecl VarDeclList | /* epsilon */ ;
+VarDecl ::= Type VarDeclNames SEMI ;
+VarDeclNames ::= VarDeclNames COMMA VarDeclName | VarDeclName ;
+VarDeclName ::= IDENT | IDENT LBRACKET RBRACKET ;
+
+ClassDecl ::= CLASS IDENT extendsStm LBRACE ClassMemberDeclList RBRACE  ;
+extendsStm ::= EXTENDS IDENT | /* epsilon */ ;
+ClassMemberDeclList ::= ClassMemberDecl ClassMemberDeclList | /* epsilon */ ;
+ClassMemberDecl ::= VarDecl | MethodDecl ;
+
+MethodDecl ::= Type MethodDeclRest  | VOID MethodDeclRest;
+MethodDeclRest ::= IDENT LPAREN FormPars RPAREN VarDeclList LBRACE StatementList RBRACE ;
+
+FormPars ::= FormParList | /* epsilon */ ;
+FormParList ::= FormPar COMMA FormParList | FormPar ;
+FormPar ::= Type IDENT ;
+
+
+Type ::= IDENT ;
+
+StatementList ::= StatementList Statement | /* epsilon */ ;
+
+Statement ::= OpenIf | ClosedIf ;
+
+OpenIf ::= IF LPAREN Condition RPAREN Statement
+		| IF LPAREN Condition RPAREN ClosedIf ELSE OpenIf
+		| LoopHeader OpenIf
+		;
+		
+ClosedIf ::= OtherStatement
+		 |	LPAREN Condition RPAREN ClosedIf ELSE ClosedIf
+		 | LoopHeader ClosedIf
+		 ;
+/*		 
+OtherStatement ::= Designator ASSIGNMENT Expr SEMI ;
+*/
+
+OtherStatement ::= Designator ASSIGNMENT Expr SEMI
+				| Designator INCREAMENT SEMI
+				| Designator DECREAMENT SEMI
+				| Designator LPAREN ActPars RPAREN SEMI
+				| READ LPAREN Designator RPAREN SEMI
+				| PRINT LPAREN Expr RPAREN SEMI
+				| PRINT LPAREN Expr COMMA NUMBER_LITERAL RPAREN SEMI
+				| BREAK SEMI
+				| RETURN SEMI
+				| RETURN Expr SEMI
+				| LBRACE StatementList RBRACE
+				| DO Statement WHILE LPAREN Condition RPAREN SEMI
+				| SEMI
+				;
+
+LoopHeader ::= WHILE LPAREN Condition RPAREN
+			;
+
+
+			
+ActPars ::= ActPars COMMA Expr | Expr ;
+Condition ::= Condition LOGICAL_OR CondTerm | CondTerm ;
+CondTerm ::= CondTerm LOGICAL_AND CondFact | CondFact ;
+CondFact ::= CondFact Relop Expr | Expr ;
+Expr ::= MINUS ExprRest | ExprRest;
+ExprRest ::= ExprRest Addop Term | Term ;
+Term ::= Term Mulop Factor | Factor ;
+Factor ::= Literal 
+		| LPAREN Expr RPAREN
+		| NEW Type
+		| NEW Type LBRACKET Expr RBRACKET
+		| Designator
+		| Designator LPAREN ActPars RPAREN
+		;
+		
+Designator ::= IDENT DesignatorRest;
+DesignatorRest ::= DesignatorRest DesignatorRestPart | DesignatorRestPart ;
+DesignatorRestPart ::= LBRACKET Expr RBRACKET | DOT IDENT ;
+
+Relop ::= EQUAL | NOT_EQUAL | GREATER | GREATER_OR_EQUAL | LESS | LESS_OR_EQUAL ;
+Addop ::= PLUS | MINUS ;
+Mulop ::= TIMES | DEVIDE | MOD ;
+
+
+
+
+
+
+
+
+
+
