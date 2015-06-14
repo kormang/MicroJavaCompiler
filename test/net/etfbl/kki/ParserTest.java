@@ -24,7 +24,7 @@ public class ParserTest {
 			Parser parser = new Parser(lexer);
 			Symbol symbol = parser.parse();
 
-			Tab.dump();
+			//Tab.dump();
 
 //			if(parser.errorDetected){
 //				System.out.println("Parsiranje nije uspjesno zavrseno!");
