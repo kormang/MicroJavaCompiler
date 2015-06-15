@@ -9,6 +9,26 @@ import rs.etf.pp1.symboltable.concepts.*;
 //action & parser code
 
 parser code {:
+
+	//level A
+	int nDeclGlobSimpleVars;
+	int nDeclGlobSimpleConsts;
+	int nSimpleMainStatements;
+	int nStatementBlocks;
+	
+	//level B
+	int nDefProgramFuncs;
+	int nDeclGlobArrays;
+	int nFuncCallsInMain;
+	
+	//level C
+	int nDeclClasses;
+	int nDefClassMeths;
+	int nObjInsts;
+	
+	//flags
+	int inProgramParams;
+	boolean inMain;
 	
 	public void dbg(Object o){
 		System.out.println(o);
@@ -22,22 +42,18 @@ parser code {:
 		System.out.println(builder.toString());
 	}
 	
-	/*
 	public void report_fatal_error(String message, Object info) throws java.lang.Exception{
 		done_parsing();
 		report_error(message, info);
 	}
-	*/
-	/*
+
 	public void syntax_error(Symbol cur_token){
 		report_error("\nSyntax error", cur_token);
 	}
-	*/
-	/*
+
 	public void unrecovered_syntax_error(Symbol cur_token) throws java.lang.Exception{
 		report_fatal_error("\nFatal error!", cur_token);
 	}
-	*/
 
 	public void report_info(String message, Object info){
 		StringBuilder builder = new StringBuilder(message);
@@ -51,8 +67,12 @@ parser code {:
 
 scan with {:
 	Symbol symbol = this.getScanner().next_token();
-	if(symbol != null && symbol.value != null){
+	/*if(symbol != null && symbol.value != null){
 		System.out.println(symbol.toString() + " " + symbol.value.toString());
+	}*/
+	if(symbol.sym == sym.INVALID){
+		System.err.println("INVALID symbol");
+		symbol = this.getScanner().next_token();
 	}
 	return symbol;
 :}
@@ -74,7 +94,8 @@ terminal MOD, SEMI, COMMA, LPAREN, RPAREN, LBRACE, RBRACE, RBRACKET, LBRACKET, D
 terminal NUMBER_LITERAL, BOOL_LITERAL, CHAR_LITERAL, STRING_LITERAL ;
 
 //other terminals
-terminal IDENT, INVALID ;
+terminal INVALID ;
+terminal String IDENT ;
 
 //non-terminals:
 non terminal Program, ProgParamDeclList, MethodDeclList, ProgParamDeclPart, ConstDecl, VarDecl, ClassDecl, ConstDeclNames, ConstDeclName ;
@@ -91,15 +112,18 @@ non terminal Struct Type ;
 
 //grammar
 
-Program ::= PROGRAM ProgName:p ProgParamDeclList LBRACE {:parser.dbg("Program body");:} MethodDeclList RBRACE
-{:
-	parser.report_info("Program finished " + p, p);
+Program ::= PROGRAM ProgName:p {: parser.inProgramParams++; :} ProgParamDeclList LBRACE MethodDeclList RBRACE 
+{: 
+	parser.inProgramParams--;
+
 	Tab.chainLocalSymbols(p);
 	Tab.closeScope();
 :};
 
 ProgName ::= IDENT:pn {:
-	parser.dbg("Program name is " + pn);
+	System.out.println(pn);
+	Tab.openScope();
+	RESULT = Tab.insert(Obj.Prog, pn, Tab.noType); 
 :}
 ;
 
@@ -108,7 +132,7 @@ ProgParamDeclPart ::= ConstDecl | VarDecl | ClassDecl ;
 
 ConstDecl ::= CONST Type ConstDeclNames SEMI ;
 ConstDeclNames ::= ConstDeclNames COMMA ConstDeclName | ConstDeclName ;
-ConstDeclName ::= IDENT:i ASSIGNMENT Literal:l {: parser.dbg("Declared Const " + i + " = " + l); :};
+ConstDeclName ::= IDENT ASSIGNMENT Literal {: if(parser.inProgramParams>0) parser.nDeclGlobSimpleConsts++; :};
 
 
 Literal ::= NUMBER_LITERAL | BOOL_LITERAL | CHAR_LITERAL | STRING_LITERAL ;
@@ -116,16 +140,24 @@ Literal ::= NUMBER_LITERAL | BOOL_LITERAL | CHAR_LITERAL | STRING_LITERAL ;
 VarDeclList ::= VarDecl VarDeclList | /* epsilon */ ;
 VarDecl ::= Type VarDeclNames SEMI ;
 VarDeclNames ::= VarDeclNames COMMA VarDeclName | VarDeclName ;
-VarDeclName ::= IDENT:i {:parser.dbg("Variable " + i +" is scalar");:} | IDENT:i LBRACKET RBRACKET{:parser.dbg("Variable " + i +" is array");:} ;
+VarDeclName ::= IDENT:i {: if(parser.inProgramParams>0) parser.nDeclGlobSimpleVars++; :} | IDENT:i LBRACKET RBRACKET{: if(parser.inProgramParams>0) parser.nDeclGlobArrays++; :} ;
 
-ClassDecl ::= CLASS IDENT:i {: parser.dbg("class " + i); :} extendsStm LBRACE {:parser.dbg("class body");:} ClassMemberDeclList RBRACE  ;
+ClassDecl ::= CLASS IDENT:i {: parser.nDeclClasses++; :} extendsStm LBRACE {: parser.inProgramParams--; :} ClassMemberDeclList RBRACE {: parser.inProgramParams++; :} ;
 extendsStm ::= EXTENDS IDENT:i {: parser.dbg("extends " + i);:} | /* epsilon */ ;
 ClassMemberDeclList ::= ClassMemberDecl ClassMemberDeclList | /* epsilon */ ;
 ClassMemberDecl ::= VarDecl | MethodDecl ;
 
 MethodDeclList ::= MethodDecl MethodDeclList | /* epsilon */;
 MethodDecl ::= Type MethodDeclRest  | VOID MethodDeclRest;
-MethodDeclRest ::= IDENT LPAREN FormPars RPAREN VarDeclList LBRACE {:parser.dbg("method body");:} StatementList {:parser.dbg("no more stms");:} RBRACE {:parser.dbg("end of meth body");:} ;
+MethodDeclRest ::= IDENT:methName 
+{:
+ if(parser.inProgramParams>0) { parser.nDefProgramFuncs++; if("main".equals(methName)) parser.inMain = true; }
+ else parser.nDefClassMeths++;
+ parser.inProgramParams--; 
+ 
+:} 
+LPAREN FormPars RPAREN VarDeclList LBRACE StatementList RBRACE {: parser.inProgramParams++; parser.inMain = false; :} ;
+
 
 FormPars ::= FormParList | /* epsilon */ ;
 FormParList ::= FormPar COMMA FormParList | FormPar ;
@@ -154,14 +186,14 @@ Type ::= IDENT:typeName
 
 StatementList ::= StatementList Statement | /* epsilon */ ;
 
-Statement ::= OpenIf {:parser.dbg("It's OpenIf");:} | ClosedIf {:parser.dbg("It's ClosedIf");:} ;
+Statement ::= OpenIf | ClosedIf ;
 
 OpenIf ::= IF LPAREN Condition RPAREN Statement
 		| IF LPAREN Condition RPAREN ClosedIf ELSE OpenIf
 		| LoopHeader OpenIf
 		;
 		
-ClosedIf ::= {:parser.dbg("other statement");:}OtherStatement
+ClosedIf ::= OtherStatement
 		 |	LPAREN Condition RPAREN ClosedIf ELSE ClosedIf
 		 | LoopHeader ClosedIf
 		 ;
@@ -175,7 +207,7 @@ OtherStatement ::= Designator ASSIGNMENT Expr SEMI
 				| PRINT LPAREN Expr COMMA NUMBER_LITERAL RPAREN SEMI
 				| BREAK SEMI
 				| RETURN SEMI
-				| RETURN {:parser.dbg("return");:} Expr SEMI
+				| RETURN Expr SEMI
 				| LBRACE StatementList RBRACE
 				| DO Statement WHILE LPAREN Condition RPAREN SEMI
 				| SEMI

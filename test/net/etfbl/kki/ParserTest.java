@@ -11,6 +11,10 @@ import java_cup.runtime.Symbol;
 
 public class ParserTest {
 
+	public static void pln(int o){
+		System.out.println(o);
+	}
+	
 	public static void main(String[] args) throws Exception {
 		Reader br = null;
 		try {
@@ -23,6 +27,13 @@ public class ParserTest {
 			Yylex lexer = new Yylex(br);
 			Parser parser = new Parser(lexer);
 			Symbol symbol = parser.parse();
+			
+			pln(parser.nDeclGlobSimpleConsts);
+			pln(parser.nDeclGlobSimpleVars);
+			pln(parser.nDeclGlobArrays);
+			pln(parser.nDefProgramFuncs);
+			pln(parser.nDefClassMeths);
+			
 
 			//Tab.dump();
 
