@@ -193,7 +193,7 @@ OpenIf ::= IF LPAREN Condition RPAREN Statement
 		| LoopHeader OpenIf
 		;
 		
-ClosedIf ::= OtherStatement
+ClosedIf ::= {: if(parser.inMain){ parser.nSimpleMainStatements++; System.out.println("STATEMENT");}:} OtherStatement 
 		 |	LPAREN Condition RPAREN ClosedIf ELSE ClosedIf
 		 | LoopHeader ClosedIf
 		 ;
@@ -201,14 +201,15 @@ ClosedIf ::= OtherStatement
 OtherStatement ::= Designator ASSIGNMENT Expr SEMI
 				| Designator INCREAMENT SEMI
 				| Designator DECREAMENT SEMI
-				| Designator LPAREN ActPars RPAREN SEMI
+				| Designator LPAREN RPAREN {: if(parser.inMain){parser.nSimpleMainStatements--; parser.nFuncCallsInMain++; System.out.println("FUNC CALL mamu ti");}:} SEMI
+				| Designator LPAREN ActPars RPAREN {: if(parser.inMain){parser.nSimpleMainStatements--; parser.nFuncCallsInMain++; System.out.println("FUNC CALL mamu ti");}:} SEMI
 				| READ LPAREN Designator RPAREN SEMI
 				| PRINT LPAREN Expr RPAREN SEMI
 				| PRINT LPAREN Expr COMMA NUMBER_LITERAL RPAREN SEMI
 				| BREAK SEMI
 				| RETURN SEMI
 				| RETURN Expr SEMI
-				| LBRACE StatementList RBRACE
+				| LBRACE StatementList RBRACE {: if(parser.inMain) { parser.nStatementBlocks++; parser.nSimpleMainStatements--; }:}
 				| DO Statement WHILE LPAREN Condition RPAREN SEMI
 				| SEMI
 				;
@@ -227,7 +228,7 @@ ExprRest ::= ExprRest Addop Term | Term ;
 Term ::= Term Mulop Factor | Factor ;
 Factor ::= Literal 
 		| LPAREN Expr RPAREN
-		| NEW Type
+		| NEW {: parser.nObjInsts++; :} Type
 		| NEW Type LBRACKET Expr RBRACKET
 		| Designator
 		| Designator LPAREN ActPars RPAREN

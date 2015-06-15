@@ -3,12 +3,12 @@ program t1
 	const int c = 5;
 	
 	class C {
-	
+		void v() { }
 	}
 
 {
 	void main() {
-	
+		v();
 	}
 
 }

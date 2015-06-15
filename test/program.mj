@@ -1,4 +1,5 @@
 program ProgramC
+
 class A{
 	int x[],y[];
 }
@@ -15,6 +16,10 @@ class C extends B{
 
 {
 
+	int ff(){
+	
+	}
+
 	int main() A a; C c; int i; int x[];
 	{
 		a = new A;
@@ -25,6 +30,13 @@ class C extends B{
 		c.x = new int[5];
 		x = new int[3];
 		i=0;
+		;
+		
+		do {
+			print("hw");
+			break;
+		} while(1);
+		
 		read(c.i);
 		while(i<5) {
 			read(c.x[i]); read(c.theA.x[i]);

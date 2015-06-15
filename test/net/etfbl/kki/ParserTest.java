@@ -33,6 +33,13 @@ public class ParserTest {
 			pln(parser.nDeclGlobArrays);
 			pln(parser.nDefProgramFuncs);
 			pln(parser.nDefClassMeths);
+			pln(parser.nDeclClasses);
+			pln(parser.nSimpleMainStatements);
+			pln(parser.nStatementBlocks);
+			pln(parser.nFuncCallsInMain);
+			pln(parser.nObjInsts);
+			
+			
 			
 
 			//Tab.dump();
