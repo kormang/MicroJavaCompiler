@@ -130,7 +130,7 @@ ProgName ::= IDENT:pn {:
 ProgParamDeclList ::= ProgParamDeclList ProgParamDeclPart | /* epsilon */ ;
 ProgParamDeclPart ::= ConstDecl | VarDecl | ClassDecl ;
 
-ConstDecl ::= CONST Type ConstDeclNames SEMI ;
+ConstDecl ::= CONST Type ConstDeclNames SEMI | CONST error SEMI ;
 ConstDeclNames ::= ConstDeclNames COMMA ConstDeclName | ConstDeclName ;
 ConstDeclName ::= IDENT ASSIGNMENT Literal {: if(parser.inProgramParams>0) parser.nDeclGlobSimpleConsts++; :};
 
@@ -138,13 +138,13 @@ ConstDeclName ::= IDENT ASSIGNMENT Literal {: if(parser.inProgramParams>0) parse
 Literal ::= NUMBER_LITERAL | BOOL_LITERAL | CHAR_LITERAL | STRING_LITERAL ;
 
 VarDeclList ::= VarDecl VarDeclList | /* epsilon */ ;
-VarDecl ::= Type VarDeclNames SEMI ;
+VarDecl ::= Type VarDeclNames SEMI | Type error SEMI | Type error LBRACE ;
 VarDeclNames ::= VarDeclNames COMMA VarDeclName | VarDeclName ;
 VarDeclName ::= IDENT:i {: if(parser.inProgramParams>0) parser.nDeclGlobSimpleVars++; :} | IDENT:i LBRACKET RBRACKET{: if(parser.inProgramParams>0) parser.nDeclGlobArrays++; :} ;
 
 ClassDecl ::= CLASS IDENT:i {: parser.nDeclClasses++; :} extendsStm LBRACE {: parser.inProgramParams--; :} ClassMemberDeclList RBRACE {: parser.inProgramParams++; :} ;
-extendsStm ::= EXTENDS IDENT:i {: parser.dbg("extends " + i);:} | /* epsilon */ ;
-ClassMemberDeclList ::= ClassMemberDecl ClassMemberDeclList | /* epsilon */ ;
+extendsStm ::= EXTENDS IDENT:i {: parser.dbg("extends " + i);:} | EXTENDS error LBRACE | /* epsilon */ ;
+ClassMemberDeclList ::= ClassMemberDecl ClassMemberDeclList | error ClassMemberDeclList RBRACE | /* epsilon */ ;
 ClassMemberDecl ::= VarDecl | MethodDecl ;
 
 MethodDeclList ::= MethodDecl MethodDeclList | /* epsilon */;
@@ -160,7 +160,7 @@ LPAREN FormPars RPAREN VarDeclList LBRACE StatementList RBRACE {: parser.inProgr
 
 
 FormPars ::= FormParList | /* epsilon */ ;
-FormParList ::= FormPar COMMA FormParList | FormPar ;
+FormParList ::= FormPar COMMA FormParList | FormPar | error COMMA |  error RPAREN ;
 FormPar ::= Type IDENT ;
 
 
@@ -188,17 +188,17 @@ StatementList ::= StatementList Statement | /* epsilon */ ;
 
 Statement ::= OpenIf | ClosedIf ;
 
-OpenIf ::= IF LPAREN Condition RPAREN Statement
-		| IF LPAREN Condition RPAREN ClosedIf ELSE OpenIf
+OpenIf ::= IF LPAREN Condition RPAREN Statement | IF error RPAREN Statement
+		| IF LPAREN Condition RPAREN ClosedIf ELSE OpenIf | IF error RPAREN ClosedIf ELSE OpenIf
 		| LoopHeader OpenIf
 		;
 		
 ClosedIf ::= {: if(parser.inMain){ parser.nSimpleMainStatements++; System.out.println("STATEMENT");}:} OtherStatement 
-		 |	LPAREN Condition RPAREN ClosedIf ELSE ClosedIf
+		 | IF LPAREN Condition RPAREN ClosedIf ELSE ClosedIf | IF error RPAREN ClosedIf ELSE ClosedIf
 		 | LoopHeader ClosedIf
 		 ;
 
-OtherStatement ::= Designator ASSIGNMENT Expr SEMI
+OtherStatement ::= Designator ASSIGNMENT Expr SEMI | Designator ASSIGNMENT error SEMI | error ASSIGNMENT Expr SEMI
 				| Designator INCREAMENT SEMI
 				| Designator DECREAMENT SEMI
 				| Designator LPAREN RPAREN {: if(parser.inMain){parser.nSimpleMainStatements--; parser.nFuncCallsInMain++; System.out.println("FUNC CALL mamu ti");}:} SEMI
@@ -210,16 +210,16 @@ OtherStatement ::= Designator ASSIGNMENT Expr SEMI
 				| RETURN SEMI
 				| RETURN Expr SEMI
 				| LBRACE StatementList RBRACE {: if(parser.inMain) { parser.nStatementBlocks++; parser.nSimpleMainStatements--; }:}
-				| DO Statement WHILE LPAREN Condition RPAREN SEMI
+				| DO Statement WHILE LPAREN Condition RPAREN SEMI | DO Statement WHILE error RPAREN
 				| SEMI
 				;
 
-LoopHeader ::= WHILE LPAREN Condition RPAREN
+LoopHeader ::= WHILE LPAREN Condition RPAREN | WHILE error RPAREN
 			;
 
 
 			
-ActPars ::= ActPars COMMA Expr | Expr ;
+ActPars ::= ActPars COMMA Expr | Expr | ActPars error COMMA | ActPars error RPAREN;
 Condition ::= Condition LOGICAL_OR CondTerm | CondTerm ;
 CondTerm ::= CondTerm LOGICAL_AND CondFact | CondFact ;
 CondFact ::= CondFact Relop Expr | Expr ;
@@ -228,15 +228,16 @@ ExprRest ::= ExprRest Addop Term | Term ;
 Term ::= Term Mulop Factor | Factor ;
 Factor ::= Literal 
 		| LPAREN Expr RPAREN
-		| NEW {: parser.nObjInsts++; :} Type
+		| NEW Type {: parser.nObjInsts++; :}
 		| NEW Type LBRACKET Expr RBRACKET
 		| Designator
 		| Designator LPAREN ActPars RPAREN
+		| Designator LPAREN RPAREN
 		;
 		
 Designator ::= IDENT | IDENT DesignatorRest;
 DesignatorRest ::= DesignatorRest DesignatorRestPart | DesignatorRestPart ;
-DesignatorRestPart ::= LBRACKET Expr RBRACKET | DOT IDENT ;
+DesignatorRestPart ::= LBRACKET Expr RBRACKET | LBRACKET error RBRACKET | DOT IDENT ;
 
 Relop ::= EQUAL | NOT_EQUAL | GREATER | GREATER_OR_EQUAL | LESS | LESS_OR_EQUAL ;
 Addop ::= PLUS | MINUS ;

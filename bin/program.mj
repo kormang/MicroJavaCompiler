@@ -4,6 +4,7 @@ class A{
 	int x[],y[];
 }
 	const int pi = 3, e = 2;
+	const int u;
 class B extends A{
 	int i; int x[];
 	int getValue(int a) int b; bool c;
@@ -30,7 +31,10 @@ class C extends B{
 		c.x = new int[5];
 		x = new int[3];
 		i=0;
+		i = i;
 		;
+		
+		ff(s,-g+s*f*c.x());
 		
 		do {
 			print("hw");
