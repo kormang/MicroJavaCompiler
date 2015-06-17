@@ -5,6 +5,7 @@ package net.etfbl.kki;
 import java_cup.runtime.*;
 import rs.etf.pp1.symboltable.Tab;
 import rs.etf.pp1.symboltable.concepts.*;
+import java.util.*;
 
 //action & parser code
 
@@ -30,6 +31,9 @@ parser code {:
 	int inProgramParams;
 	boolean inMain;
 	
+	public static Struct String = new Struct(Struct.Array, Tab.charType);
+	public static Struct Bool = new Struct(Struct.Bool);
+	
 	public void dbg(Object o){
 		System.out.println(o);
 	}
@@ -44,6 +48,10 @@ parser code {:
 	
 	public void report_fatal_error(String message, Object info) throws java.lang.Exception{
 		done_parsing();
+		report_error(message, info);
+	}
+	
+	public void report_semanthic_error(String message, Object info) throws java.lang.Exception {
 		report_error(message, info);
 	}
 
@@ -78,7 +86,52 @@ scan with {:
 :}
 
 init with {:
+	Tab.init();
+	
+	Tab.currentScope.addToLocals(new Obj(Obj.Type, "string", Parser.String));
+	Tab.currentScope.addToLocals(new Obj(Obj.Type, "bool", Parser.Bool));
+:}
 
+action code {:
+
+		static class LiteralHolder {
+			public Object value;
+			public Struct type;
+			public LiteralHolder(Object value, Struct type){
+				this.value = value; this.type = type;
+			}
+		}
+
+
+		Struct currentType;
+		int isVoid; // -1 not void, 0 undefined, 1 void
+		Obj currentMeth;
+		Obj currentMethBeingCalled;
+		int currentActPar;
+		Obj currentDesignator;
+		
+		String[] kinds = {"constant", "variable", "type", "method", "field", "element", "program"};
+		
+		Obj findLocal(Obj container, String localName){
+			Collection<Obj> locals = container.getLocalSymbols();
+			for(Obj l : locals){
+				if(l.getName().equals(localName)){
+					return l;
+				}
+			}
+			
+			return Tab.noObj;
+			
+		}
+		
+		boolean assignableTo(Struct src, Struct dest){
+			return src.assignableTo(dest);
+		}
+
+		Obj getLocalAt(Obj ob, int pos){
+			return ((Obj)ob.getLocalSymbols().toArray()[pos]);
+		}		
+		
 :}
 
 //keyword terminals
@@ -99,31 +152,32 @@ terminal String IDENT ;
 
 //non-terminals:
 non terminal Program, ProgParamDeclList, MethodDeclList, ProgParamDeclPart, ConstDecl, VarDecl, ClassDecl, ConstDeclNames, ConstDeclName ;
-non terminal Literal, VarDeclList, VarDeclNames, VarDeclName, extendsStm, ClassMemberDeclList, ClassMemberDecl, MethodDecl, MethodDeclRest ;
-non terminal FormPars;
-non terminal FormParList, FormPar ;
-non terminal Designator, Expr, Condition, Statement, StatementList, OtherStatement, OpenIf, ClosedIf ;
-non terminal ActPars, CondTerm, CondFact, Relop, ExprRest, Addop, Term, Mulop, Factor ;
-non terminal DesignatorRest, DesignatorRestPart ;
-non terminal LoopHeader ;
+non terminal VarDeclList, VarDeclNames, VarDeclName, extendsStm, ClassMemberDeclList, ClassMemberDecl, MethodDecl, MethodDeclRest ;
+non terminal FormPar ;
+non terminal Statement, StatementList, OtherStatement, OpenIf, ClosedIf ;
+non terminal Relop, Addop, Mulop ;
+non terminal LoopHeader;
 
-non terminal Obj ProgName ;
-non terminal Struct Type ;
+non terminal Struct CondTerm, CondFact, Condition;
+non terminal Obj ProgName, Designator, DesignatorRest, DesignatorRestPart ;
+non terminal Struct Type, Expr, ExprRest, Term, Factor ;
+non terminal Integer FormPars, FormParList, ActPars;
 
+non terminal LiteralHolder Literal;
+non terminal Integer ParensAndActPars;
 //grammar
 
 Program ::= PROGRAM ProgName:p {: parser.inProgramParams++; :} ProgParamDeclList LBRACE MethodDeclList RBRACE 
 {: 
 	parser.inProgramParams--;
-
 	Tab.chainLocalSymbols(p);
 	Tab.closeScope();
 :};
 
 ProgName ::= IDENT:pn {:
-	System.out.println(pn);
-	Tab.openScope();
-	RESULT = Tab.insert(Obj.Prog, pn, Tab.noType); 
+	parser.report_info("Program: " + pn, null);
+	RESULT = Tab.insert(Obj.Prog, pn, Tab.noType);
+	Tab.openScope(); 
 :}
 ;
 
@@ -132,41 +186,78 @@ ProgParamDeclPart ::= ConstDecl | VarDecl | ClassDecl ;
 
 ConstDecl ::= CONST Type ConstDeclNames SEMI | CONST error SEMI ;
 ConstDeclNames ::= ConstDeclNames COMMA ConstDeclName | ConstDeclName ;
-ConstDeclName ::= IDENT ASSIGNMENT Literal {: if(parser.inProgramParams>0) parser.nDeclGlobSimpleConsts++; :};
+ConstDeclName ::= IDENT:name ASSIGNMENT Literal 
+				{: 
+					if(parser.inProgramParams>0) parser.nDeclGlobSimpleConsts++; 
+					Tab.insert(Obj.Con, name, currentType);
+					parser.report_info(nameleft+" : Declared constant "+name,null);
+				:}
+				;
 
 
-Literal ::= NUMBER_LITERAL | BOOL_LITERAL | CHAR_LITERAL | STRING_LITERAL ;
+Literal ::= NUMBER_LITERAL:n {: RESULT = new LiteralHolder(n, Tab.intType); :} | BOOL_LITERAL:n  {: RESULT = new LiteralHolder(n, Parser.Bool); :} | CHAR_LITERAL:n  {: RESULT = new LiteralHolder(n, Tab.charType); :} | STRING_LITERAL:n  {: RESULT = new LiteralHolder(n, Parser.String); :} ;
 
 VarDeclList ::= VarDecl VarDeclList | /* epsilon */ ;
-VarDecl ::= Type VarDeclNames SEMI | Type error SEMI | Type error LBRACE ;
+VarDecl ::= Type VarDeclNames SEMI  | Type error SEMI | Type error LBRACE ;
 VarDeclNames ::= VarDeclNames COMMA VarDeclName | VarDeclName ;
-VarDeclName ::= IDENT:i {: if(parser.inProgramParams>0) parser.nDeclGlobSimpleVars++; :} | IDENT:i LBRACKET RBRACKET{: if(parser.inProgramParams>0) parser.nDeclGlobArrays++; :} ;
+VarDeclName ::= IDENT:name 
+				{: 
+					if(parser.inProgramParams>0) parser.nDeclGlobSimpleVars++;
+					Tab.insert(Obj.Var, name, currentType);
+					parser.report_info(nameleft+" : Declared variable "+name, null);
+				:} 
+				| IDENT:name LBRACKET RBRACKET
+				{:
+					 if(parser.inProgramParams>0) parser.nDeclGlobArrays++;
+					 Tab.insert(Obj.Var, name, currentType);
+					 parser.report_info(nameleft+" : Declared variable "+name, null);
+				:}
+				 ;
 
-ClassDecl ::= CLASS IDENT:i {: parser.nDeclClasses++; :} extendsStm LBRACE {: parser.inProgramParams--; :} ClassMemberDeclList RBRACE {: parser.inProgramParams++; :} ;
+ClassDecl ::= CLASS IDENT:i 
+{:
+	parser.nDeclClasses++; 
+	RESULT = Tab.insert(Obj.Type, i, new Struct(Struct.Class));
+:}
+ extendsStm LBRACE {: parser.inProgramParams--; Tab.openScope(); :} ClassMemberDeclList RBRACE {: parser.inProgramParams++; :} ;
+
 extendsStm ::= EXTENDS IDENT:i {: parser.dbg("extends " + i);:} | EXTENDS error LBRACE | /* epsilon */ ;
 ClassMemberDeclList ::= ClassMemberDecl ClassMemberDeclList | error ClassMemberDeclList RBRACE | /* epsilon */ ;
 ClassMemberDecl ::= VarDecl | MethodDecl ;
 
 MethodDeclList ::= MethodDecl MethodDeclList | /* epsilon */;
-MethodDecl ::= Type MethodDeclRest  | VOID MethodDeclRest;
+MethodDecl ::= Type MethodDeclRest | VOID {: isVoid = 1; currentType = Tab.noType; :} MethodDeclRest ;
 MethodDeclRest ::= IDENT:methName 
 {:
  if(parser.inProgramParams>0) { parser.nDefProgramFuncs++; if("main".equals(methName)) parser.inMain = true; }
  else parser.nDefClassMeths++;
  parser.inProgramParams--; 
  
+ currentMeth = Tab.insert(Obj.Meth, methName, currentType);
+ Tab.openScope();
+ isVoid = 0;
+ 
 :} 
-LPAREN FormPars RPAREN VarDeclList LBRACE StatementList RBRACE {: parser.inProgramParams++; parser.inMain = false; :} ;
+LPAREN FormPars:level RPAREN VarDeclList LBRACE StatementList RBRACE 
+{:
+	parser.inProgramParams++;
+	parser.inMain = false;
+	currentMeth.setLevel(level); //number of parameters
+	
+	Tab.chainLocalSymbols(currentMeth);
+	Tab.closeScope();
+:}
+;
 
 
-FormPars ::= FormParList | /* epsilon */ ;
-FormParList ::= FormPar COMMA FormParList | FormPar | error COMMA |  error RPAREN ;
+FormPars ::= FormParList:n {: RESULT = n; :} | /* epsilon */ {: RESULT = new Integer(0); :} ;
+FormParList ::= FormPar COMMA FormParList:n {: RESULT = n + 1; :} | FormPar {: RESULT = new Integer(1); :} | error COMMA |  error RPAREN ;
 FormPar ::= Type IDENT ;
 
 
 Type ::= IDENT:typeName
 {:
-	Obj typeNode = Tab.find((String)typeName);
+	Obj typeNode = Tab.find(typeName);
 
 	if(typeNode == Tab.noObj)
 	{
@@ -182,6 +273,7 @@ Type ::= IDENT:typeName
 			RESULT = Tab.noType;
 		}
 	}
+	currentType = RESULT;
 :};
 
 StatementList ::= StatementList Statement | /* epsilon */ ;
@@ -219,25 +311,109 @@ LoopHeader ::= WHILE LPAREN Condition RPAREN | WHILE error RPAREN
 
 
 			
-ActPars ::= ActPars COMMA Expr | Expr | ActPars error COMMA | ActPars error RPAREN;
-Condition ::= Condition LOGICAL_OR CondTerm | CondTerm ;
-CondTerm ::= CondTerm LOGICAL_AND CondFact | CondFact ;
-CondFact ::= CondFact Relop Expr | Expr ;
-Expr ::= MINUS ExprRest | ExprRest;
-ExprRest ::= ExprRest Addop Term | Term ;
-Term ::= Term Mulop Factor | Factor ;
-Factor ::= Literal 
-		| LPAREN Expr RPAREN
-		| NEW Type {: parser.nObjInsts++; :}
-		| NEW Type LBRACKET Expr RBRACKET
-		| Designator
-		| Designator LPAREN ActPars RPAREN
-		| Designator LPAREN RPAREN
+ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type", null);} :} 
+		| Expr:pt {: RESULT = new Integer(0); if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type", null);} :} 
+		| ActPars error COMMA 
+		| ActPars error RPAREN
 		;
 		
-Designator ::= IDENT | IDENT DesignatorRest;
-DesignatorRest ::= DesignatorRest DesignatorRestPart | DesignatorRestPart ;
-DesignatorRestPart ::= LBRACKET Expr RBRACKET | LBRACKET error RBRACKET | DOT IDENT ;
+Condition ::= Condition LOGICAL_OR CondTerm {: /* TODO: maybe something more */ :}
+			| CondTerm:ct {: if(ct.getKind() != Struct.Bool) { parser.report_semanthic_error(ctleft + " : bool type expected. ", null); RESULT = Tab.noType; } else RESULT = ct; :}
+			;
+CondTerm ::= CondTerm:tt LOGICAL_AND CondFact:ft {: if(ft.getKind() != Struct.Bool) { parser.report_semanthic_error(ftleft + " : int type expected. ", null); RESULT = Tab.noType; } else RESULT = tt; :} 
+		| CondFact:ft {:if(ft.getKind() != Struct.Bool) { parser.report_semanthic_error(ftleft + " : bool type expected. ", null); RESULT = Tab.noType; } else RESULT = ft; :} 
+		;
+
+CondFact ::= CondFact:ft Relop Expr:et
+		{:
+			//TODO: here should be more complicated scenario than this
+			if(et.getKind() != Struct.Int){
+				parser.report_semanthic_error(etleft + " : int type expected. ", null);
+				RESULT = Tab.noType;
+			} else {
+				if(ft.getKind() == Struct.Int){
+					RESULT = Parser.Bool;
+				} else {
+					RESULT = ft;
+				}
+			}
+				
+		:}
+		 | Expr:et {: RESULT = et; :} ;
+
+
+Expr ::= MINUS ExprRest:r {: RESULT = r; :} | ExprRest:r {: RESULT = r; :} ;
+ExprRest ::= ExprRest:r Addop Term:t
+			{:
+				if(r.compatibleWith(t)){
+					RESULT = r;
+				} else {
+					RESULT = Tab.noType;
+				}
+			:} 
+			| Term:t {: RESULT = t; :}
+			;
+			
+			
+Term ::= Term:t Mulop Factor:f 
+		{:
+			if (t.getKind() == Struct.Int && f.getKind() == Struct.Int) {
+				RESULT = t;
+			} else {
+				RESULT = Tab.noType;
+			}
+		:}
+		 | Factor:f {: RESULT = f; :}
+		 ;
+		 
+Factor ::= Literal:l {: RESULT = l.type; :}
+		| LPAREN Expr:t RPAREN {: RESULT  = t; :}
+		| NEW Type:t {: parser.nObjInsts++; RESULT = t; :}
+		| NEW Type:t LBRACKET Expr:e RBRACKET {: if(e.getKind() == Struct.Int) RESULT = new Struct(Struct.Array, t); else { RESULT = Tab.noType; parser.report_info(eleft+" : Array index must be of type int.",null); } :}
+		| Designator:d {: RESULT = d.getType(); :}
+		| Designator:d
+		{:
+			if(d.getKind() == Obj.Meth){
+				currentMethBeingCalled = d; currentActPar = 0; 
+			} else {
+				parser.report_info(dleft+" : " + d.getName() + " is not method.", null);
+				//currentMethBeingCalled = null;
+			}
+		:} ParensAndActPars:n {: if(d.getKind() != Obj.Meth || d.getLevel() != 0) { parser.report_info(dleft+" : number of parameters does not match." ,null); RESULT = Tab.noType; } else { RESULT = d.getType(); }  :}
+		;
+		
+ParensAndActPars ::= LPAREN RPAREN {: RESULT = new Integer(0); :} | LPAREN ActPars:n RPAREN {: RESULT = n; :} ;
+		
+Designator ::= IDENT:i 
+				{:
+					Obj ob = Tab.find(i);
+					if(ob != Tab.noObj){
+						parser.report_info(ileft+" : Used " + kinds[ob.getKind()] + " " + i + " level: " + ob.getLevel(), null);
+					}
+					RESULT = ob;
+				:}
+			 | IDENT:i {: currentDesignator = Tab.find(i); :} DesignatorRest:r
+			 {:
+			 	RESULT = r;
+			 :}
+			 ;
+DesignatorRest ::= DesignatorRest DesignatorRestPart:r {: RESULT = r; :} | DesignatorRestPart:r {: RESULT = r; :} ;
+DesignatorRestPart ::= LBRACKET Expr:s RBRACKET
+					 {:
+					 	//indeksiranje currentDesignator-a
+					 	if (currentDesignator.getType().getKind()==Struct.Array){
+					 		RESULT=new Obj(Obj.Elem, "", currentDesignator.getType().getElemType());
+					 	} else {
+					 		RESULT = Tab.noObj;
+					 	}
+					 :}
+					 | LBRACKET error RBRACKET
+					 | DOT IDENT:i
+					 {:
+					 	//pristup polju ili poziv metode currentDesignator-a
+					 	Obj local = findLocal(currentDesignator, i);
+					 	RESULT = local;
+					 :} ;
 
 Relop ::= EQUAL | NOT_EQUAL | GREATER | GREATER_OR_EQUAL | LESS | LESS_OR_EQUAL ;
 Addop ::= PLUS | MINUS ;

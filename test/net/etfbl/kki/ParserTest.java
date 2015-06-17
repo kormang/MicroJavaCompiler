@@ -42,7 +42,7 @@ public class ParserTest {
 			
 			
 
-			//Tab.dump();
+			Tab.dump();
 
 //			if(parser.errorDetected){
 //				System.out.println("Parsiranje nije uspjesno zavrseno!");
