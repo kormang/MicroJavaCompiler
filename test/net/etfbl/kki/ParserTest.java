@@ -15,6 +15,11 @@ public class ParserTest {
 		System.out.println(o);
 	}
 	
+	public static void pln(String str, int o){
+		System.out.print(str);
+		pln(o);
+	}
+	
 	public static void main(String[] args) throws Exception {
 		Reader br = null;
 		try {
@@ -28,16 +33,16 @@ public class ParserTest {
 			Parser parser = new Parser(lexer);
 			Symbol symbol = parser.parse();
 			
-			pln(parser.nDeclGlobSimpleConsts);
-			pln(parser.nDeclGlobSimpleVars);
-			pln(parser.nDeclGlobArrays);
-			pln(parser.nDefProgramFuncs);
-			pln(parser.nDefClassMeths);
-			pln(parser.nDeclClasses);
-			pln(parser.nSimpleMainStatements);
-			pln(parser.nStatementBlocks);
-			pln(parser.nFuncCallsInMain);
-			pln(parser.nObjInsts);
+			pln("Global constants: ", parser.nDeclGlobSimpleConsts);
+			pln("Global variables: ", parser.nDeclGlobSimpleVars);
+			pln("Global arrays: ", parser.nDeclGlobArrays);
+			pln("Definitions of global functions: ", parser.nDefProgramFuncs);
+			pln("Definitions of class methods: ", parser.nDefClassMeths);
+			pln("Declarations of classes: ", parser.nDeclClasses);
+			pln("Statements in main: ", parser.nSimpleMainStatements);
+			pln("Blocks of statements: ", parser.nStatementBlocks);
+			pln("Function calls in main: ", parser.nFuncCallsInMain);
+			pln("Object instatiations: ", parser.nObjInsts);
 			
 			
 			

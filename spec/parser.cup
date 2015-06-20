@@ -28,8 +28,8 @@ parser code {:
 	int nObjInsts;
 	
 	//flags
-	int inProgramParams;
-	boolean inMain;
+	int inProgramParams; //if greater that zero, currently parsed elements are members of program - global scope
+	boolean inMain; //if currently parsing main
 	
 	public static Struct String = new Struct(Struct.Array, Tab.charType);
 	public static Struct Bool = new Struct(Struct.Bool);
@@ -103,16 +103,21 @@ action code {:
 		}
 
 
-		Struct currentType;
+		Struct currentType; //return type of method being parsed or type of consts or variables while parsing declaration
 		int isVoid; // -1 not void, 0 undefined, 1 void
-		Obj currentMeth;
-		Obj currentMethBeingCalled;
-		int currentActPar;
-		Obj currentDesignator;
+		Obj currentClass = Tab.noObj; //refers to class currently being parsed
+		Obj currentMeth;			//refers to method/function currently being parsed
+		Obj currentMethBeingCalled; //points to method that is being called while parsing ActPars
+		int currentActPar;			//number of actual parameter currently being parsed, for matching purpose
+		Obj currentDesignator;		//while parsing designator resolving expression, this poinst to this.inExpression or this[inExpression] ...
+		Obj currentThis = Tab.noObj;//if designator resolvs in method that is part of class this points to that class
+		int currentLevel = -1; //current scope level => -1 = univers
+		
 		
 		String[] kinds = {"constant", "variable", "type", "method", "field", "element", "program"};
 		
 		Obj findLocal(Obj container, String localName){
+		
 			Collection<Obj> locals = container.getLocalSymbols();
 			for(Obj l : locals){
 				if(l.getName().equals(localName)){
@@ -120,17 +125,72 @@ action code {:
 				}
 			}
 			
+			if(container.getType().getKind() == Struct.Class){
+				return findInheritedMember(container.getType(), localName);
+			}
+			
 			return Tab.noObj;
 			
 		}
 		
 		boolean assignableTo(Struct src, Struct dest){
-			return src.assignableTo(dest);
+			if(src.getKind() != Struct.Class){
+				return src.assignableTo(dest);
+			}
+		
+			do {
+				if(src.assignableTo(dest)){
+					return true;
+				}
+				src = src.getElemType();
+			} while(src != null);
+			
+			return false;
 		}
 
 		Obj getLocalAt(Obj ob, int pos){
-			return ((Obj)ob.getLocalSymbols().toArray()[pos]);
-		}		
+			Object[] objs = (ob.getLocalSymbols().toArray());
+			if(objs.length <= pos) return Tab.noObj;
+			else return (Obj)objs[pos];
+		}
+		
+		Obj findMemberOfCurrentClass(String name){
+			Obj res = Tab.currentScope.findSymbol(name);
+			if(res != null){
+				return res;
+			}
+			if(currentClass.getType().getElemType() != null){
+				return findInheritedMember(currentClass.getType().getElemType(), name);
+			}
+			return Tab.noObj;
+			
+		}
+		
+		Obj findInheritedMember(Struct derivedClass, String name) {
+			Struct cc = derivedClass;
+			do {
+				Obj obj = cc.getMembersTable().searchKey(name);
+				
+				if(obj != null){
+					return obj;
+				}
+			
+				cc = cc.getElemType();
+			} while(cc != null);
+			
+			return Tab.noObj;
+		}
+		
+		
+		void openScope(){
+			currentLevel++;
+			Tab.openScope();
+		}
+		
+		void closeScope(){
+			currentLevel--;
+			Tab.closeScope();
+		}
 		
 :}
 
@@ -160,7 +220,7 @@ non terminal LoopHeader;
 
 non terminal Struct CondTerm, CondFact, Condition;
 non terminal Obj ProgName, Designator, DesignatorRest, DesignatorRestPart ;
-non terminal Struct Type, Expr, ExprRest, Term, Factor ;
+non terminal Struct Type, Expr, ExprRest, Term, Factor, MethodCall ;
 non terminal Integer FormPars, FormParList, ActPars;
 
 non terminal LiteralHolder Literal;
@@ -171,13 +231,14 @@ Program ::= PROGRAM ProgName:p {: parser.inProgramParams++; :} ProgParamDeclList
 {: 
 	parser.inProgramParams--;
 	Tab.chainLocalSymbols(p);
-	Tab.closeScope();
+	closeScope();
 :};
 
 ProgName ::= IDENT:pn {:
 	parser.report_info("Program: " + pn, null);
 	RESULT = Tab.insert(Obj.Prog, pn, Tab.noType);
-	Tab.openScope(); 
+	RESULT.setLevel(currentLevel);
+	openScope(); 
 :}
 ;
 
@@ -189,7 +250,9 @@ ConstDeclNames ::= ConstDeclNames COMMA ConstDeclName | ConstDeclName ;
 ConstDeclName ::= IDENT:name ASSIGNMENT Literal 
 				{: 
 					if(parser.inProgramParams>0) parser.nDeclGlobSimpleConsts++; 
-					Tab.insert(Obj.Con, name, currentType);
+					Obj con = Tab.insert(Obj.Con, name, currentType);
+					con.setLevel(currentLevel);
+					
 					parser.report_info(nameleft+" : Declared constant "+name,null);
 				:}
 				;
@@ -203,25 +266,59 @@ VarDeclNames ::= VarDeclNames COMMA VarDeclName | VarDeclName ;
 VarDeclName ::= IDENT:name 
 				{: 
 					if(parser.inProgramParams>0) parser.nDeclGlobSimpleVars++;
-					Tab.insert(Obj.Var, name, currentType);
-					parser.report_info(nameleft+" : Declared variable "+name, null);
+					Obj var;
+
+					if(currentLevel == 1 && currentClass != Tab.noObj){ //we're in class
+						var = Tab.insert(Obj.Fld, name, currentType);
+
+					} else {
+						var = Tab.insert(Obj.Var, name, currentType);
+						
+					}
+					var.setLevel(currentLevel);
+					parser.report_info(nameleft+" : Declared "+ kinds[var.getKind()] +" "+name, null);
 				:} 
 				| IDENT:name LBRACKET RBRACKET
 				{:
-					 if(parser.inProgramParams>0) parser.nDeclGlobArrays++;
-					 Tab.insert(Obj.Var, name, currentType);
-					 parser.report_info(nameleft+" : Declared variable "+name, null);
+					if(parser.inProgramParams>0) parser.nDeclGlobSimpleVars++;
+					Obj var;
+					
+					Struct t = new Struct(Struct.Array, currentType);
+					
+					if(currentLevel == 1 && currentClass != Tab.noObj){ //we're in class
+						var = Tab.insert(Obj.Fld, name, t);
+
+					} else {
+						var = Tab.insert(Obj.Var, name, t);
+						
+					}
+					var.setLevel(currentLevel);
+					parser.report_info(nameleft+" : Declared "+ kinds[var.getKind()] +" "+name, null);
 				:}
 				 ;
 
 ClassDecl ::= CLASS IDENT:i 
 {:
-	parser.nDeclClasses++; 
-	RESULT = Tab.insert(Obj.Type, i, new Struct(Struct.Class));
+	parser.nDeclClasses++;
+	currentClass = Tab.insert(Obj.Type, i, new Struct(Struct.Class));
+	RESULT = currentClass;
 :}
- extendsStm LBRACE {: parser.inProgramParams--; Tab.openScope(); :} ClassMemberDeclList RBRACE {: parser.inProgramParams++; :} ;
+ extendsStm LBRACE {: parser.inProgramParams--; openScope(); :} ClassMemberDeclList RBRACE {: parser.inProgramParams++; Tab.chainLocalSymbols(currentClass); Tab.chainLocalSymbols(currentClass.getType()); currentClass = Tab.noObj; closeScope(); :} ;
 
-extendsStm ::= EXTENDS IDENT:i {: parser.dbg("extends " + i);:} | EXTENDS error LBRACE | /* epsilon */ ;
+extendsStm ::= EXTENDS IDENT:i 
+			{:
+								
+				Obj superClass = Tab.find(i);
+				
+				parser.dbg("extends " + kinds[superClass.getKind()] + " " + superClass.getName());
+				
+				currentClass.getType().setElementType(superClass.getType());
+				/* TODO offsets and things */
+				
+			:} 
+			| EXTENDS error LBRACE 
+			| /* epsilon */ 
+			;
 ClassMemberDeclList ::= ClassMemberDecl ClassMemberDeclList | error ClassMemberDeclList RBRACE | /* epsilon */ ;
 ClassMemberDecl ::= VarDecl | MethodDecl ;
 
@@ -234,10 +331,10 @@ MethodDeclRest ::= IDENT:methName
  parser.inProgramParams--; 
  
  currentMeth = Tab.insert(Obj.Meth, methName, currentType);
- Tab.openScope();
+ openScope();
  isVoid = 0;
  
-:} 
+:}
 LPAREN FormPars:level RPAREN VarDeclList LBRACE StatementList RBRACE 
 {:
 	parser.inProgramParams++;
@@ -245,14 +342,19 @@ LPAREN FormPars:level RPAREN VarDeclList LBRACE StatementList RBRACE
 	currentMeth.setLevel(level); //number of parameters
 	
 	Tab.chainLocalSymbols(currentMeth);
-	Tab.closeScope();
+	closeScope();
 :}
 ;
 
 
 FormPars ::= FormParList:n {: RESULT = n; :} | /* epsilon */ {: RESULT = new Integer(0); :} ;
 FormParList ::= FormPar COMMA FormParList:n {: RESULT = n + 1; :} | FormPar {: RESULT = new Integer(1); :} | error COMMA |  error RPAREN ;
-FormPar ::= Type IDENT ;
+FormPar ::= Type:t IDENT:i
+		{:
+			Obj var = Tab.insert(Obj.Var, i, t);
+			var.setLevel(currentLevel);
+		:}
+		;
 
 
 Type ::= IDENT:typeName
@@ -285,7 +387,7 @@ OpenIf ::= IF LPAREN Condition RPAREN Statement | IF error RPAREN Statement
 		| LoopHeader OpenIf
 		;
 		
-ClosedIf ::= {: if(parser.inMain){ parser.nSimpleMainStatements++; System.out.println("STATEMENT");}:} OtherStatement 
+ClosedIf ::= {: if(parser.inMain){ parser.nSimpleMainStatements++;}:} OtherStatement 
 		 | IF LPAREN Condition RPAREN ClosedIf ELSE ClosedIf | IF error RPAREN ClosedIf ELSE ClosedIf
 		 | LoopHeader ClosedIf
 		 ;
@@ -293,8 +395,7 @@ ClosedIf ::= {: if(parser.inMain){ parser.nSimpleMainStatements++; System.out.pr
 OtherStatement ::= Designator ASSIGNMENT Expr SEMI | Designator ASSIGNMENT error SEMI | error ASSIGNMENT Expr SEMI
 				| Designator INCREAMENT SEMI
 				| Designator DECREAMENT SEMI
-				| Designator LPAREN RPAREN {: if(parser.inMain){parser.nSimpleMainStatements--; parser.nFuncCallsInMain++; System.out.println("FUNC CALL mamu ti");}:} SEMI
-				| Designator LPAREN ActPars RPAREN {: if(parser.inMain){parser.nSimpleMainStatements--; parser.nFuncCallsInMain++; System.out.println("FUNC CALL mamu ti");}:} SEMI
+				| MethodCall {: if(parser.inMain){parser.nSimpleMainStatements--; parser.nFuncCallsInMain++; } :} SEMI
 				| READ LPAREN Designator RPAREN SEMI
 				| PRINT LPAREN Expr RPAREN SEMI
 				| PRINT LPAREN Expr COMMA NUMBER_LITERAL RPAREN SEMI
@@ -311,8 +412,8 @@ LoopHeader ::= WHILE LPAREN Condition RPAREN | WHILE error RPAREN
 
 
 			
-ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type", null);} :} 
-		| Expr:pt {: RESULT = new Integer(0); if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type", null);} :} 
+ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT-1).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type", null);} :} 
+		| Expr:pt {: RESULT = new Integer(1); if(!assignableTo(getLocalAt(currentMethBeingCalled, 0).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type", null);} :} 
 		| ActPars error COMMA 
 		| ActPars error RPAREN
 		;
@@ -371,49 +472,85 @@ Factor ::= Literal:l {: RESULT = l.type; :}
 		| NEW Type:t {: parser.nObjInsts++; RESULT = t; :}
 		| NEW Type:t LBRACKET Expr:e RBRACKET {: if(e.getKind() == Struct.Int) RESULT = new Struct(Struct.Array, t); else { RESULT = Tab.noType; parser.report_info(eleft+" : Array index must be of type int.",null); } :}
 		| Designator:d {: RESULT = d.getType(); :}
-		| Designator:d
+		| MethodCall:mt {: RESULT = mt; :}
+		;
+		
+		
+		
+MethodCall ::= Designator:d
 		{:
+			Obj thisThis = Tab.noObj;
 			if(d.getKind() == Obj.Meth){
+				if(currentThis != Tab.noObj){
+					thisThis = currentThis;
+				} else if (currentClass != Tab.noObj && findMemberOfCurrentClass(d.getName()) == d){
+					thisThis = currentClass;
+				}
 				currentMethBeingCalled = d; currentActPar = 0; 
 			} else {
 				parser.report_info(dleft+" : " + d.getName() + " is not method.", null);
 				//currentMethBeingCalled = null;
 			}
-		:} ParensAndActPars:n {: if(d.getKind() != Obj.Meth || d.getLevel() != 0) { parser.report_info(dleft+" : number of parameters does not match." ,null); RESULT = Tab.noType; } else { RESULT = d.getType(); }  :}
+			
+		:} ParensAndActPars:n {: if(d.getKind() != Obj.Meth || d.getLevel() != n) { parser.report_info(dleft+" : number of parameters does not match." ,null); RESULT = Tab.noType; } else { RESULT = d.getType(); }  :}
 		;
 		
 ParensAndActPars ::= LPAREN RPAREN {: RESULT = new Integer(0); :} | LPAREN ActPars:n RPAREN {: RESULT = n; :} ;
 		
 Designator ::= IDENT:i 
 				{:
-					Obj ob = Tab.find(i);
+					Obj ob;
+					if("this".equals(i)){
+						ob = currentClass;
+					} else {
+						ob = Tab.find(i);
+					}	
+						
 					if(ob != Tab.noObj){
 						parser.report_info(ileft+" : Used " + kinds[ob.getKind()] + " " + i + " level: " + ob.getLevel(), null);
 					}
 					RESULT = ob;
 				:}
-			 | IDENT:i {: currentDesignator = Tab.find(i); :} DesignatorRest:r
+			 | IDENT:i {: if("this".equals(i)){	currentDesignator = currentClass; } else { currentDesignator = Tab.find(i); } :} DesignatorRest:r
 			 {:
 			 	RESULT = r;
+			 	currentDesignator = Tab.noObj;
 			 :}
 			 ;
 DesignatorRest ::= DesignatorRest DesignatorRestPart:r {: RESULT = r; :} | DesignatorRestPart:r {: RESULT = r; :} ;
-DesignatorRestPart ::= LBRACKET Expr:s RBRACKET
+DesignatorRestPart ::= LBRACKET Expr:e RBRACKET
 					 {:
 					 	//indeksiranje currentDesignator-a
-					 	if (currentDesignator.getType().getKind()==Struct.Array){
+					 	if(e.getKind() != Struct.Int) { RESULT = Tab.noObj; parser.report_info(eleft+" : Array index must be of type int.",null); }
+					 	else if (currentDesignator.getType().getKind()==Struct.Array){
 					 		RESULT=new Obj(Obj.Elem, "", currentDesignator.getType().getElemType());
 					 	} else {
 					 		RESULT = Tab.noObj;
 					 	}
+					 	currentDesignator = RESULT;
 					 :}
 					 | LBRACKET error RBRACKET
 					 | DOT IDENT:i
 					 {:
 					 	//pristup polju ili poziv metode currentDesignator-a
+					 	parser.report_info(ileft + " : currentDesignator " + currentDesignator.getType().getKind() + " " + currentDesignator.getName(), null);
 					 	Obj local = findLocal(currentDesignator, i);
+					 	parser.report_info(ileft+" : Accessing member " + i + " of " + kinds[currentDesignator.getKind()] + " " + currentDesignator.getName() + " found " + kinds[local.getKind()] + " " + local.getName() + " level=" + local.getLevel(), null);
+					 	
+					 	if(local.getKind() == Obj.Meth){
+					 		if(currentDesignator.getType().getKind() == Struct.Class){
+					 			currentThis = currentDesignator;
+					 		} else {
+					 			parser.report_semanthic_error(ileft + " : Method called for non-class type.",null);
+					 			currentThis = Tab.noObj;
+					 		}
+					 	}else{
+					 		currentThis = Tab.noObj;
+					 	}
 					 	RESULT = local;
-					 :} ;
+					 	currentDesignator = RESULT;
+					 :}
+					 ;
 
 Relop ::= EQUAL | NOT_EQUAL | GREATER | GREATER_OR_EQUAL | LESS | LESS_OR_EQUAL ;
 Addop ::= PLUS | MINUS ;

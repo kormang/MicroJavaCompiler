@@ -4,49 +4,57 @@ class A{
 	int x[],y[];
 }
 	const int pi = 3, e = 2;
-	const int u;
+	const int c = 1;
+	char c1;
 class B extends A{
 	int i; int x[];
+	A theA;
 	int getValue(int a) int b; bool c;
 	{ return this.i + this.x[0] + a; }
 }
-class C extends B{
-	A theA;
+class C extends B {
 	string a;
+	
 }
 
 {
 
-	int ff(){
+	int ff(int a, char c){
 	
 	}
 
-	int main() A a; C c; int i; int x[];
+	int main() A a; B b; C c; int i; int x[];
 	{
 		a = new A;
-		a.x = new int[5];
-		a.y = new int[5];
+//		a.x = new int[5];
+//		a.y = new int[5];
 		c = new C;
-		c.theA = a;
-		c.x = new int[5];
+//		c.theA = a;
+//		c.x = new int[5];
 		x = new int[3];
 		i=0;
 		i = i;
 		;
+		b = new B;
 		
-		ff(s,-g+s*f*c.x());
+		x = c1 + 1;
+		ff(i, 'c');
 		
 		do {
 			print("hw");
 			break;
-		} while(1);
+		} while(true);
 		
-		read(c.i);
+//		read(c.i);
 		while(i<5) {
-			read(c.x[i]); read(c.theA.x[i]);
+//			read(c.x[i]); read(c.theA.x[i]);
 			i++;
 		}
-		print(c.getValue(c.theA.x[0]));
+		
+		print(c.theA.x[0]);
+		//c.getValue(i);
+		//c.theA = new A;
+		//c.theA.x[0] = 5;
 		
 		if ( 1 < 2 ) 
 			if ( 2 < 3 )
