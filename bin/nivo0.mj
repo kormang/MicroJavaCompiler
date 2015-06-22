@@ -18,11 +18,14 @@ program ProgramA
 		a = new A;
 		a.y = 5;
 		
-		if(i > j || a.meth() < 1 && k == l && i <= l) {
+		if(i > j || a.meth() < 1) {
 			print('b');
 			print('c');
 			print('d');
+		} else if(a.y >= 5) {
+			print('e');
 		}
+		
 		print('a');	
 		print('\n');
 

@@ -152,7 +152,7 @@ action code {:
 		
 		Deque<Deque<AdrDest>> condTerms;
 		Deque<Integer> condTermAddresses;
-		int beginAddress;
+		int beginIfAddress;
 		
 		void patchCondition(){
 			condTermAddresses.addLast(Code.pc);
@@ -165,7 +165,7 @@ action code {:
 				for(AdrDest ad : facts){
 					int patchAdr = ad.address;
 					if(ad.dest == AdrDest.BEGIN){
-						Code.put2(patchAdr, (beginAddress-patchAdr + 1));
+						Code.put2(patchAdr, (beginIfAddress-patchAdr + 1));
 					} else if (ad.dest == AdrDest.NEXT) {
 						Code.put2(patchAdr, (nextAdr-patchAdr + 1));
 					} else {
@@ -564,7 +564,7 @@ Type ::= IDENT:typeName
 
 StatementList ::= StatementList Statement | /* epsilon */ ;
 
-Else ::= ELSE {: :} ;
+Else ::= ELSE {: Code.putJump(0); RESULT = Code.pc -2; patchCondition(); :} ;
 ParensAndCondition ::= LPAREN 
 					{:
 						condTerms = new LinkedList<Deque<AdrDest>>();
@@ -585,7 +585,7 @@ OpenIf ::= IF ParensAndCondition Statement
 			patchCondition();
 		:} 
 		| IF error RPAREN Statement
-		| IF ParensAndCondition ClosedIf Else:elseAdr OpenIf | IF error RPAREN ClosedIf ELSE OpenIf
+		| IF ParensAndCondition ClosedIf Else:elseAdr OpenIf {: Code.fixup(elseAdr); :} | IF error RPAREN ClosedIf ELSE OpenIf
 		| LoopHeader OpenIf
 		;
 
@@ -685,7 +685,7 @@ Condition ::= CondTerm {: condTerms.addLast(new LinkedList<AdrDest>()); condTerm
 				//Code.putJump(0);
 				//condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
 				
-				beginAddress = Code.pc;
+				beginIfAddress = Code.pc;
 			:}
 			;
 			
