@@ -122,6 +122,18 @@ action code {:
 				}
 			}
 		}
+		
+		static class AdrDest {
+			public int address;
+			public int dest;
+			public static int BEGIN = 1; //If
+			public static int END = 2; //Else
+			public static int NEXT = 3; //next term
+			public AdrDest(int address, int dest){
+				this.address = address;
+				this.dest = dest;
+			}
+		}
 
 
 		Struct currentType; //return type of method being parsed or type of consts or variables while parsing declaration
@@ -133,12 +145,51 @@ action code {:
 		int currentActPar;			//number of actual parameter currently being parsed, for matching purpose
 		Obj currentDesignator;		//while parsing designator resolving expression, this poinst to this.inExpression or this[inExpression] ...
 		Obj currentThis = Tab.noObj;//if designator resolvs in method that is part of class this points to that class
-		Obj thisThis = Tab.noObj; //resolvs to this argument of methods
+		Obj thisForMethCall = Tab.noObj; //resolvs to this argument of methods, can be equal to currentThis but there are situations when reference to class is implicit, then currentThis will be Tab.noObj, but thisForMethCall will point to right thing
 		int currentLevel = -1; //current scope level => -1 = univers
+		int ifAdr; //address of if statement for backpatching
+		boolean lastTermInCondition;
+		
+		Deque<Deque<AdrDest>> condTerms;
+		Deque<Integer> condTermAddresses;
+		int beginAddress;
+		
+		void patchCondition(){
+			condTermAddresses.addLast(Code.pc);
+		
+			Iterator<Integer> it = condTermAddresses.iterator();
+			
+			for(Deque<AdrDest> facts : condTerms){
+				int nextAdr = it.next();
+				
+				for(AdrDest ad : facts){
+					int patchAdr = ad.address;
+					if(ad.dest == AdrDest.BEGIN){
+						Code.put2(patchAdr, (beginAddress-patchAdr + 1));
+					} else if (ad.dest == AdrDest.NEXT) {
+						Code.put2(patchAdr, (nextAdr-patchAdr + 1));
+					} else {
+						parser.report_error("Nupus se!", null);
+					}
+				}
+			}
+		}
 		
 		
 		String[] kinds = {"constant", "variable", "type", "method", "field", "element", "program"};
 		Stack<Obj> currentDesignatorStack = new Stack<Obj>();
+		Stack<Obj> currentThisStack = new Stack<Obj>();
+		Stack<Obj> thisForMethCallStack = new Stack<Obj>();
+		Stack<Obj> currentMethBeingCalledStack = new Stack<Obj>();
+		
+		void popCurrentThis(){
+			currentThis = currentThisStack.pop();
+		}
+		
+		void pushCurrentThis(){
+			currentThisStack.push(currentThis);
+			currentThis = Tab.noObj;
+		}
 		
 		void pushCurrentDesignator() {
 			currentDesignatorStack.push(currentDesignator);
@@ -147,6 +198,18 @@ action code {:
 		
 		void popCurrentDesignator() {
 			currentDesignator = currentDesignatorStack.pop();
+		}
+		
+		void popThisForMethCallStack(){
+			thisForMethCall = thisForMethCallStack.pop();
+			currentMethBeingCalled = currentMethBeingCalledStack.pop();
+		}
+		
+		void pushThisForMethCallStack(){
+			thisForMethCallStack.push(thisForMethCall);
+			thisForMethCall = Tab.noObj;
+			currentMethBeingCalledStack.push(currentMethBeingCalled);
+			currentMethBeingCalled = Tab.noObj;
 		}
 		
 		
@@ -315,14 +378,16 @@ non terminal Statement, StatementList, OtherStatement, OpenIf, ClosedIf ;
 
 non terminal LoopHeader;
 
-non terminal Integer Relop, Addop, Mulop ;
-non terminal Struct CondTerm, CondFact, Condition;
+non terminal Integer Else ;
+non terminal Integer Relop, Addop, Mulop, CondFact ;
+non terminal Struct CondTerm,  Condition;
 non terminal Obj ProgName, Designator, DesignatorRest, DesignatorRestPart ;
 non terminal Struct Type, Expr, ExprRest, Term, Factor, MethodCall ;
 non terminal Integer FormPars, FormParList, ActPars;
 
 non terminal LiteralHolder Literal;
 non terminal Integer ParensAndActPars;
+non terminal ParensAndCondition;
 //grammar
 
 Program ::= PROGRAM ProgName:p {: parser.inProgramParams++; :} ProgParamDeclList LBRACE MethodDeclList RBRACE 
@@ -499,15 +564,33 @@ Type ::= IDENT:typeName
 
 StatementList ::= StatementList Statement | /* epsilon */ ;
 
+Else ::= ELSE {: :} ;
+ParensAndCondition ::= LPAREN 
+					{:
+						condTerms = new LinkedList<Deque<AdrDest>>();
+						condTerms.addLast(new LinkedList<AdrDest>());
+						condTermAddresses = new LinkedList<Integer>();
+					:}
+					Condition
+					{:
+						 
+					:}
+					RPAREN
+					;
+
 Statement ::= OpenIf | ClosedIf ;
 
-OpenIf ::= IF LPAREN Condition RPAREN Statement | IF error RPAREN Statement
-		| IF LPAREN Condition RPAREN ClosedIf ELSE OpenIf | IF error RPAREN ClosedIf ELSE OpenIf
+OpenIf ::= IF ParensAndCondition Statement
+		{:
+			patchCondition();
+		:} 
+		| IF error RPAREN Statement
+		| IF ParensAndCondition ClosedIf Else:elseAdr OpenIf | IF error RPAREN ClosedIf ELSE OpenIf
 		| LoopHeader OpenIf
 		;
-		
+
 ClosedIf ::= {: if(parser.inMain){ parser.nSimpleMainStatements++;}:} OtherStatement 
-		 | IF LPAREN Condition RPAREN ClosedIf ELSE ClosedIf | IF error RPAREN ClosedIf ELSE ClosedIf
+		 | IF ParensAndCondition ClosedIf Else:elseAdr ClosedIf {: Code.fixup(elseAdr); :}| IF error RPAREN ClosedIf ELSE ClosedIf
 		 | LoopHeader ClosedIf
 		 ;
 
@@ -574,39 +657,50 @@ OtherStatement ::= Designator:d ASSIGNMENT Expr:e SEMI
 				| SEMI
 				;
 
-LoopHeader ::= WHILE LPAREN Condition RPAREN | WHILE error RPAREN
+LoopHeader ::= WHILE ParensAndCondition | WHILE error RPAREN
 			;
 
 			
-ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT-1).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type", null);} :} 
-		| Expr:pt {: RESULT = (thisThis != Tab.noObj) ? new Integer(2) : new Integer(1); if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT-1).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type", null);} :} 
+ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT-1).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type" + currentMethBeingCalled.getName() + " " + currentThis.getName() + " " + thisForMethCall.getName(), null);} :} 
+		| Expr:pt {: RESULT = (thisForMethCall != Tab.noObj) ? new Integer(2) : new Integer(1); if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT-1).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type" + currentMethBeingCalled.getName() + " " + currentThis.getName() + " " + thisForMethCall.getName(), null);} :} 
 		| ActPars error COMMA 
 		| ActPars error RPAREN
 		;
 		
-Condition ::= Condition LOGICAL_OR CondTerm {: /* TODO: maybe something more */ :}
-			| CondTerm:ct {: if(ct.getKind() != Struct.Bool) { parser.report_semanthic_error(ctleft + " : bool type expected. ", null); RESULT = Tab.noType; } else RESULT = ct; :}
+Condition ::= CondTerm {: condTerms.addLast(new LinkedList<AdrDest>()); condTermAddresses.addLast(Code.pc); :} LOGICAL_OR Condition
+			| 
+			CondTerm:ct
+			{:
+				//The last term in cond
+				
+				Code.putJump(0);
+				condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
+				
+				beginAddress = Code.pc;
+			:}
 			;
-CondTerm ::= CondTerm:tt LOGICAL_AND CondFact:ft {: if(ft.getKind() != Struct.Bool) { parser.report_semanthic_error(ftleft + " : int type expected. ", null); RESULT = Tab.noType; } else RESULT = tt; :} 
-		| CondFact:ft {:if(ft.getKind() != Struct.Bool) { parser.report_semanthic_error(ftleft + " : bool type expected. ", null); RESULT = Tab.noType; } else RESULT = ft; :} 
+			
+CondTerm ::= CondFact:op
+		{:
+			Code.putFalseJump(op, 0);
+			//non of the above :)
+			condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
+		:} 
+		LOGICAL_AND CondTerm:tt 
+		| CondFact:op 
+		{:
+			//The last in Term
+			//just last Fact in Term
+			Code.putFalseJump(Code.inverse[op], 0);
+			condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.BEGIN));
+		:} 
 		;
 
-CondFact ::= CondFact:ft Relop Expr:et
+CondFact ::= Expr:ft Relop:op Expr:et
 		{:
-			//TODO: here should be more complicated scenario than this
-			if(et.getKind() != Struct.Int){
-				parser.report_semanthic_error(etleft + " : int type expected. ", null);
-				RESULT = Tab.noType;
-			} else {
-				if(ft.getKind() == Struct.Int){
-					RESULT = Parser.Bool;
-				} else {
-					RESULT = ft;
-				}
-			}
-				
+			RESULT = op;
 		:}
-		 | Expr:et {: RESULT = et; :} ;
+		 | Expr:et {: if(et.getKind() != Struct.Bool) parser.report_semanthic_error(etleft + " : Bool type expected!",null); RESULT = Code.eq; Code.loadConst(1); :} ;
 
 
 Expr ::= MINUS ExprRest:r {: RESULT = r; :} | ExprRest:r {: RESULT = r; :} ;
@@ -659,12 +753,13 @@ Factor ::= Literal:l {: RESULT = l.type; Code.loadConst(l.getIntValue()); :}
 		
 MethodCall ::= Designator:d
 		{:
-			thisThis = Tab.noObj;
+			pushThisForMethCallStack();
 			if(d.getKind() == Obj.Meth){
+				System.err.println("currentThis = " + currentThis.getName());
 				if(currentThis != Tab.noObj){
-					thisThis = currentThis;
+					thisForMethCall = currentThis;
 				} else if (currentClass != Tab.noObj && findMemberOfCurrentClass(d.getName()) == d){
-					thisThis = currentClass;
+					thisForMethCall = currentClass;
 					Code.load(Tab.find("this"));
 				}
 				currentMethBeingCalled = d; currentActPar = 0;
@@ -672,28 +767,31 @@ MethodCall ::= Designator:d
 				parser.report_info(dleft+" : " + d.getName() + " is not method.", null);
 				//currentMethBeingCalled = null;
 			}
-			
+			System.err.println("thisForMethCall = " + thisForMethCall.getName());
 		:} ParensAndActPars:n 
 		{:
 			if(d.getKind() != Obj.Meth || d.getLevel() != n) {
-				parser.report_error(dleft+" : number of parameters does not match. " + d.getLevel() + " != " + n + " | " + thisThis.getName() ,null);
+				parser.report_error(dleft+" : number of parameters does not match. " + d.getLevel() + " != " + n + " | " + thisForMethCall.getName() ,null);
 				RESULT = Tab.noType;
 			} else {
 				RESULT = d.getType();
 			}
-			thisThis = Tab.noObj;
+			
 			parser.report_info("Calling method " + currentMethBeingCalled.getName() + " @ " + currentMethBeingCalled.getAdr(),null);
 			int destAddr = currentMethBeingCalled.getAdr() - Code.pc;
 			Code.put(Code.call);
 			Code.put2(destAddr);
+			popThisForMethCallStack();
+			popCurrentThis();
 		:}
 		;
 		
-ParensAndActPars ::= LPAREN RPAREN {: RESULT = (thisThis != Tab.noObj) ? new Integer(1) : new Integer(0); :} | LPAREN ActPars:n RPAREN {: RESULT = n; :} ;
+ParensAndActPars ::= LPAREN RPAREN {: RESULT = (thisForMethCall != Tab.noObj) ? new Integer(1) : new Integer(0); :} | LPAREN ActPars:n RPAREN {: RESULT = n; :} ;
 		
 Designator ::= IDENT:i
 				{:
 					pushCurrentDesignator();
+					pushCurrentThis();
 					Obj ob;
 					ob = Tab.find(i);
 						
@@ -703,18 +801,17 @@ Designator ::= IDENT:i
 
 					if(ob.getKind() == Obj.Fld){
 				 		currentDesignator = Tab.find("this");
-				 		currentThis = Tab.noObj;
 						Code.load(currentDesignator);
-					} else {
-						currentThis = Tab.noObj;
 					}
 
 					RESULT = ob;
+					popCurrentThis();
 					popCurrentDesignator();
 				:}
 			 | IDENT:i
 			 {: 
 			 	pushCurrentDesignator();
+			 	pushCurrentThis();
 			 	Obj ob = Tab.find(i);
 			 	
 			 	if(ob.getKind() == Obj.Fld){
@@ -728,6 +825,7 @@ Designator ::= IDENT:i
 			 DesignatorRest:r
 			 {:
 			 	RESULT = r;
+			 	if(currentDesignator.getKind() != Obj.Meth) popCurrentThis(); //otherwise leave it for MethodCall to use it and then pop it
 			 	popCurrentDesignator();
 			 :}
 			 ;
@@ -763,7 +861,7 @@ DesignatorRestPart ::= LBRACKET {: Code.load(currentDesignator);  :} Expr:e RBRA
 					 :}
 					 ;
 
-Relop ::= EQUAL | NOT_EQUAL | GREATER | GREATER_OR_EQUAL | LESS | LESS_OR_EQUAL ;
+Relop ::= EQUAL {: RESULT = Code.eq; :} | NOT_EQUAL {: RESULT = Code.ne; :} | GREATER {: RESULT = Code.gt; :} | GREATER_OR_EQUAL {: RESULT = Code.ge; :} | LESS {: RESULT = Code.lt; :} | LESS_OR_EQUAL {: RESULT = Code.le; :};
 Addop ::= PLUS {: RESULT = Code.add; :} | MINUS {: RESULT = Code.sub; :} ;
 Mulop ::= TIMES {: RESULT = Code.mul; :} | DEVIDE {: RESULT = Code.div; :} | MOD {: RESULT = Code.rem; :} ;
 
