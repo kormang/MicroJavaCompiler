@@ -18,7 +18,7 @@ public class LexerTest {
 		
 		try {
 			
-			File sourceCode = new File("test/program.mj");	
+			File sourceCode = new File("test/nivo0.mj");	
 		
 			br = new BufferedReader(new FileReader(sourceCode));
 			

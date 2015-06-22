@@ -2,10 +2,12 @@ package net.etfbl.kki;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
 
+import rs.etf.pp1.mj.runtime.Code;
 import rs.etf.pp1.symboltable.Tab;
 import java_cup.runtime.Symbol;
 
@@ -21,10 +23,18 @@ public class ParserTest {
 	}
 	
 	public static void main(String[] args) throws Exception {
+	
+		String inputFileName = "test/program.mj";
+		String outputFileName = "test/a.out";
+		
 		Reader br = null;
 		try {
 
-			File sourceCode = new File("test/program.mj");
+			if(args.length >= 1) {
+				inputFileName = args[args.length - 1];
+			}
+			
+			File sourceCode = new File(inputFileName);
 			System.out.println("Compiling source file: " + sourceCode.getAbsolutePath());
 
 			br = new BufferedReader(new FileReader(sourceCode));
@@ -49,14 +59,17 @@ public class ParserTest {
 
 			Tab.dump();
 
-//			if(parser.errorDetected){
-//				System.out.println("Parsiranje nije uspjesno zavrseno!");
-//			}
-//			else{
-//				System.out.println("Parsiranje je uspjesno zavrseno!");
-//			}
-
-			//System.out.println("Broj pojavljivanja metode print: "+parser.printCounter);
+			if(parser.errorDetected){
+				System.out.println("Compilation failed!");
+			}
+			else{
+				pln("Code size: ", Code.pc);
+				pln("Main address: ", Code.mainPc);
+				pln("Data size: ", Code.dataSize);
+				
+				Code.write(new FileOutputStream(outputFileName));
+				System.out.println("Compilation finished!");
+			}
 
 		} 
 		finally {

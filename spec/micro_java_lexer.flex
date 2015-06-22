@@ -39,9 +39,8 @@ import org.apache.commons.lang.StringEscapeUtils;
 	private char extract_char_literal(String text) {
 		char c = text.charAt(1);
 		if(c == '\\'){
-			c = char_LUT[text.charAt(1)];
+			c = char_LUT[text.charAt(2)];
 		}
-		
 		return c;
 	}
 	
@@ -125,7 +124,7 @@ import org.apache.commons.lang.StringEscapeUtils;
 [0-9]+     { return new_symbol(sym.NUMBER_LITERAL, new Integer(yytext())); }
 "false"	   { return new_symbol(sym.BOOL_LITERAL, Boolean.FALSE); }
 "true"	   { return new_symbol(sym.BOOL_LITERAL, Boolean.TRUE); }
-\'[\x00-\xff]\' { return new_symbol(sym.CHAR_LITERAL, Character.valueOf(extract_char_literal(yytext()))); }
+\'([\x20-z]|\\[nbtr])\' { return new_symbol(sym.CHAR_LITERAL, Character.valueOf(extract_char_literal(yytext()))); }
 \"([^\"]|(\\\"))*\" { if(yytext().length() == 2) return new_symbol(sym.STRING_LITERAL, ""); else { String lit = StringEscapeUtils.unescapeJava(yytext().substring(1, yytext().length()-1)); return new_symbol(sym.STRING_LITERAL, lit);} }
 
 ([a-z]|[A-Z])[a-z|A-Z|0-9|_]*  { return new_symbol(sym.IDENT, yytext()); }

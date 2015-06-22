@@ -1,0 +1,49 @@
+program ProgramA
+	int x, y, z;
+	const int pi = 3, e = 2;
+	char a, b;
+	const char c = 'c';
+	
+	class A {
+		int x;
+		
+		int getIncX(){
+			x++;
+			return this.x;
+		}
+		
+		void printX(){
+			print(x);
+		}
+	}
+	
+	class B  {
+		A a;
+		int y;
+	}
+	
+	class C extends A {
+		int x;
+	}
+	
+{
+
+	void func(int x) int niz[];{
+		niz = new int[2];
+		niz[1] = x;
+		print(niz[1] - niz[0]);
+	}
+
+	void main()
+		int niz[]; A a; B b; C c;
+	{
+			c = new C;
+			c.x = 3;
+			print(c.getIncX());
+			print(c.x);
+			c.printX();
+			
+			func(c.x);
+			
+	}
+}
