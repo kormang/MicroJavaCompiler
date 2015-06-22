@@ -150,29 +150,44 @@ action code {:
 		int ifAdr; //address of if statement for backpatching
 		boolean lastTermInCondition;
 		
-		Deque<Deque<AdrDest>> condTerms;
-		Deque<Integer> condTermAddresses;
-		int beginIfAddress;
+		static class CondInfo {
+		
+			Deque<Deque<AdrDest>> condTerms;
+			Deque<Integer> condTermAddresses;
+			int beginIfAddress;
+			
+			public CondInfo(){
+				condTerms = new LinkedList<Deque<AdrDest>>();
+				condTerms.addLast(new LinkedList<AdrDest>());
+				condTermAddresses = new LinkedList<Integer>();
+			}
+		
+		}
+		
+		Stack<CondInfo> condInfoStack = new Stack<CondInfo>();
 		
 		void patchCondition(){
-			condTermAddresses.addLast(Code.pc);
+			condInfoStack.peek().condTermAddresses.addLast(Code.pc);
 		
-			Iterator<Integer> it = condTermAddresses.iterator();
+			Iterator<Integer> it = condInfoStack.peek().condTermAddresses.iterator();
 			
-			for(Deque<AdrDest> facts : condTerms){
+			for(Deque<AdrDest> facts : condInfoStack.peek().condTerms){
 				int nextAdr = it.next();
 				
 				for(AdrDest ad : facts){
 					int patchAdr = ad.address;
 					if(ad.dest == AdrDest.BEGIN){
-						Code.put2(patchAdr, (beginIfAddress-patchAdr + 1));
+						Code.put2(patchAdr, (condInfoStack.peek().beginIfAddress-patchAdr + 1));
 					} else if (ad.dest == AdrDest.NEXT) {
 						Code.put2(patchAdr, (nextAdr-patchAdr + 1));
 					} else {
-						parser.report_error("Nupus se!", null);
+						parser.report_error("Ne mere to!", null);
 					}
 				}
 			}
+			
+			//we've used it
+			condInfoStack.pop();
 		}
 		
 		
@@ -376,9 +391,7 @@ non terminal VarDeclList, VarDeclNames, VarDeclName, extendsStm, ClassMemberDecl
 non terminal FormPar ;
 non terminal Statement, StatementList, OtherStatement, OpenIf, ClosedIf ;
 
-non terminal LoopHeader;
-
-non terminal Integer Else ;
+non terminal Integer Else, LoopHeader, Do, DoBody ;
 non terminal Integer Relop, Addop, Mulop, CondFact, CondTerm ;
 non terminal Struct Condition;
 non terminal Obj ProgName, Designator, DesignatorRest, DesignatorRestPart ;
@@ -564,34 +577,20 @@ Type ::= IDENT:typeName
 
 StatementList ::= StatementList Statement | /* epsilon */ ;
 
-Else ::= ELSE {: Code.putJump(0); RESULT = Code.pc -2; patchCondition(); :} ;
-ParensAndCondition ::= LPAREN 
-					{:
-						condTerms = new LinkedList<Deque<AdrDest>>();
-						condTerms.addLast(new LinkedList<AdrDest>());
-						condTermAddresses = new LinkedList<Integer>();
-					:}
-					Condition
-					{:
-						 
-					:}
-					RPAREN
-					;
+Else ::= ELSE {: Code.putJump(0); RESULT = Code.pc -2;  patchCondition(); :} ;
+ParensAndCondition ::= LPAREN {: condInfoStack.push(new CondInfo()); :} Condition RPAREN ;
 
 Statement ::= OpenIf | ClosedIf ;
 
-OpenIf ::= IF ParensAndCondition Statement
-		{:
-			patchCondition();
-		:} 
+OpenIf ::= IF ParensAndCondition Statement {: patchCondition(); :} 
 		| IF error RPAREN Statement
 		| IF ParensAndCondition ClosedIf Else:elseAdr OpenIf {: Code.fixup(elseAdr); :} | IF error RPAREN ClosedIf ELSE OpenIf
-		| LoopHeader OpenIf
+		| LoopHeader:topAdr OpenIf {: Code.putJump(topAdr); patchCondition(); :}
 		;
 
 ClosedIf ::= {: if(parser.inMain){ parser.nSimpleMainStatements++;}:} OtherStatement 
 		 | IF ParensAndCondition ClosedIf Else:elseAdr ClosedIf {: Code.fixup(elseAdr); :}| IF error RPAREN ClosedIf ELSE ClosedIf
-		 | LoopHeader ClosedIf
+		 | LoopHeader:topAdr ClosedIf {: Code.putJump(topAdr); patchCondition(); :}
 		 ;
 
 OtherStatement ::= Designator:d ASSIGNMENT Expr:e SEMI 
@@ -653,12 +652,13 @@ OtherStatement ::= Designator:d ASSIGNMENT Expr:e SEMI
 				| RETURN SEMI {: Code.put(Code.exit); Code.put(Code.return_); returnExists = true; :}
 				| RETURN Expr:e SEMI {: if(assignableTo(e, currentMeth.getType())){ Code.put(Code.exit); Code.put(Code.return_); returnExists = true; } else { parser.report_semanthic_error(eleft + " : Type not assignable to return type.", null); } :}
 				| LBRACE StatementList RBRACE {: if(parser.inMain) { parser.nStatementBlocks++; parser.nSimpleMainStatements--; }:}
-				| DO Statement WHILE LPAREN Condition RPAREN SEMI | DO Statement WHILE error RPAREN
+				| DO Statement WHILE ParensAndCondition SEMI | DO Statement WHILE error RPAREN
 				| SEMI
 				;
 
-LoopHeader ::= WHILE ParensAndCondition | WHILE error RPAREN
+LoopHeader ::= WHILE {: RESULT = Code.pc; :} ParensAndCondition | WHILE error RPAREN
 			;
+Do ::= DO {: RESULT = Code.pc; :};
 
 			
 ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT-1).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type" + currentMethBeingCalled.getName() + " " + currentThis.getName() + " " + thisForMethCall.getName(), null);} :} 
@@ -667,7 +667,7 @@ ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocal
 		| ActPars error RPAREN
 		;
 		
-Condition ::= CondTerm {: condTerms.addLast(new LinkedList<AdrDest>()); condTermAddresses.addLast(Code.pc); :} LOGICAL_OR Condition
+Condition ::= CondTerm {: condInfoStack.peek().condTerms.addLast(new LinkedList<AdrDest>()); condInfoStack.peek().condTermAddresses.addLast(Code.pc); :} LOGICAL_OR Condition
 			| 
 			CondTerm:op
 			{:
@@ -675,17 +675,17 @@ Condition ::= CondTerm {: condTerms.addLast(new LinkedList<AdrDest>()); condTerm
 				
 				//Revert what last Fact did, because he didn't know that he's last
 				Code.pc -= 3;
-				condTerms.getLast().removeLast();
+				condInfoStack.peek().condTerms.getLast().removeLast();
 				
 				//now fix it
 				Code.putFalseJump(op, 0);
-				condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
+				condInfoStack.peek().condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
 				
 				//This is obsolite now
 				//Code.putJump(0);
 				//condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
 				
-				beginIfAddress = Code.pc;
+				condInfoStack.peek().beginIfAddress = Code.pc;
 			:}
 			;
 			
@@ -693,7 +693,7 @@ CondTerm ::= CondFact:op
 		{:
 			Code.putFalseJump(op, 0);
 			//non of the above :)
-			condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
+			condInfoStack.peek().condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
 		:} 
 		LOGICAL_AND CondTerm:tt {: RESULT = tt; :}
 		| CondFact:op 
@@ -701,7 +701,7 @@ CondTerm ::= CondFact:op
 			//The last in Term
 			//just last Fact in Term
 			Code.putFalseJump(Code.inverse[op], 0);
-			condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.BEGIN));
+			condInfoStack.peek().condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.BEGIN));
 			RESULT = op;
 		:} 
 		;
