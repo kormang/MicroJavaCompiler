@@ -2,24 +2,29 @@ program ProgramA
 	class A {
 		int y;
 		int meth(){
+			print('m');
 			return this.y;
 		}
 	}
 	
 {
 
-	void main() int i, j, k, l;
+	void main() int i, j, k, l; A a;
 	{
 		i = 1;
 		j = 1;
 		k = 1;
-		l = 1;
+		l = 5;
+		a = new A;
+		a.y = 5;
 		
-		if(i > j || k == l && i <= l) {
+		if(i > j || a.meth() < 1 && k == l && i <= l) {
 			print('b');
 			print('c');
 			print('d');
 		}
 		print('a');	
+		print('\n');
+
 	}
 }

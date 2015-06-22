@@ -42,7 +42,7 @@ public class ParserTest {
 			Yylex lexer = new Yylex(br);
 			Parser parser = new Parser(lexer);
 			Symbol symbol = parser.parse();
-			
+/*
 			pln("Global constants: ", parser.nDeclGlobSimpleConsts);
 			pln("Global variables: ", parser.nDeclGlobSimpleVars);
 			pln("Global arrays: ", parser.nDeclGlobArrays);
@@ -58,7 +58,7 @@ public class ParserTest {
 			
 
 			Tab.dump();
-
+*/
 			if(parser.errorDetected){
 				System.out.println("Compilation failed!");
 			}

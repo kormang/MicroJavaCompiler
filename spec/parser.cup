@@ -379,8 +379,8 @@ non terminal Statement, StatementList, OtherStatement, OpenIf, ClosedIf ;
 non terminal LoopHeader;
 
 non terminal Integer Else ;
-non terminal Integer Relop, Addop, Mulop, CondFact ;
-non terminal Struct CondTerm,  Condition;
+non terminal Integer Relop, Addop, Mulop, CondFact, CondTerm ;
+non terminal Struct Condition;
 non terminal Obj ProgName, Designator, DesignatorRest, DesignatorRestPart ;
 non terminal Struct Type, Expr, ExprRest, Term, Factor, MethodCall ;
 non terminal Integer FormPars, FormParList, ActPars;
@@ -669,12 +669,21 @@ ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocal
 		
 Condition ::= CondTerm {: condTerms.addLast(new LinkedList<AdrDest>()); condTermAddresses.addLast(Code.pc); :} LOGICAL_OR Condition
 			| 
-			CondTerm:ct
+			CondTerm:op
 			{:
 				//The last term in cond
 				
-				Code.putJump(0);
+				//Revert what last Fact did, because he didn't know that he's last
+				Code.pc -= 3;
+				condTerms.getLast().removeLast();
+				
+				//now fix it
+				Code.putFalseJump(op, 0);
 				condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
+				
+				//This is obsolite now
+				//Code.putJump(0);
+				//condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
 				
 				beginAddress = Code.pc;
 			:}
@@ -686,13 +695,14 @@ CondTerm ::= CondFact:op
 			//non of the above :)
 			condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.NEXT));
 		:} 
-		LOGICAL_AND CondTerm:tt 
+		LOGICAL_AND CondTerm:tt {: RESULT = tt; :}
 		| CondFact:op 
 		{:
 			//The last in Term
 			//just last Fact in Term
 			Code.putFalseJump(Code.inverse[op], 0);
 			condTerms.getLast().addLast(new AdrDest(Code.pc - 2, AdrDest.BEGIN));
+			RESULT = op;
 		:} 
 		;
 
@@ -755,7 +765,6 @@ MethodCall ::= Designator:d
 		{:
 			pushThisForMethCallStack();
 			if(d.getKind() == Obj.Meth){
-				System.err.println("currentThis = " + currentThis.getName());
 				if(currentThis != Tab.noObj){
 					thisForMethCall = currentThis;
 				} else if (currentClass != Tab.noObj && findMemberOfCurrentClass(d.getName()) == d){
@@ -767,7 +776,6 @@ MethodCall ::= Designator:d
 				parser.report_info(dleft+" : " + d.getName() + " is not method.", null);
 				//currentMethBeingCalled = null;
 			}
-			System.err.println("thisForMethCall = " + thisForMethCall.getName());
 		:} ParensAndActPars:n 
 		{:
 			if(d.getKind() != Obj.Meth || d.getLevel() != n) {
