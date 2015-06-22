@@ -159,14 +159,19 @@ action code {:
 			public CondInfo(){
 				condTerms = new LinkedList<Deque<AdrDest>>();
 				condTerms.addLast(new LinkedList<AdrDest>());
-				condTermAddresses = new LinkedList<Integer>();
+				condTermAddresses = new LinkedList<Integer>();				
 			}
 		
 		}
 		
 		Stack<CondInfo> condInfoStack = new Stack<CondInfo>();
+		Stack<Deque<Integer>> breakPointsStack = new Stack<Deque<Integer>>();
 		
 		void patchCondition(){
+			patchCondition(false);
+		}
+		
+		void patchCondition(boolean patchBreaks){
 			condInfoStack.peek().condTermAddresses.addLast(Code.pc);
 		
 			Iterator<Integer> it = condInfoStack.peek().condTermAddresses.iterator();
@@ -183,6 +188,13 @@ action code {:
 					} else {
 						parser.report_error("Ne mere to!", null);
 					}
+				}
+			}
+			
+			if(patchBreaks && !breakPointsStack.empty()){
+				Deque<Integer> breaks = breakPointsStack.pop();
+				for(int adr : breaks){
+					Code.fixup(adr);
 				}
 			}
 			
@@ -391,7 +403,7 @@ non terminal VarDeclList, VarDeclNames, VarDeclName, extendsStm, ClassMemberDecl
 non terminal FormPar ;
 non terminal Statement, StatementList, OtherStatement, OpenIf, ClosedIf ;
 
-non terminal Integer Else, LoopHeader, Do, DoBody ;
+non terminal Integer Else, LoopHeader, Do ;
 non terminal Integer Relop, Addop, Mulop, CondFact, CondTerm ;
 non terminal Struct Condition;
 non terminal Obj ProgName, Designator, DesignatorRest, DesignatorRestPart ;
@@ -585,12 +597,12 @@ Statement ::= OpenIf | ClosedIf ;
 OpenIf ::= IF ParensAndCondition Statement {: patchCondition(); :} 
 		| IF error RPAREN Statement
 		| IF ParensAndCondition ClosedIf Else:elseAdr OpenIf {: Code.fixup(elseAdr); :} | IF error RPAREN ClosedIf ELSE OpenIf
-		| LoopHeader:topAdr OpenIf {: Code.putJump(topAdr); patchCondition(); :}
+		| LoopHeader:topAdr OpenIf {: Code.putJump(topAdr); patchCondition(true); :}
 		;
 
 ClosedIf ::= {: if(parser.inMain){ parser.nSimpleMainStatements++;}:} OtherStatement 
 		 | IF ParensAndCondition ClosedIf Else:elseAdr ClosedIf {: Code.fixup(elseAdr); :}| IF error RPAREN ClosedIf ELSE ClosedIf
-		 | LoopHeader:topAdr ClosedIf {: Code.putJump(topAdr); patchCondition(); :}
+		 | LoopHeader:topAdr ClosedIf {: Code.putJump(topAdr); patchCondition(true); :}
 		 ;
 
 OtherStatement ::= Designator:d ASSIGNMENT Expr:e SEMI 
@@ -648,17 +660,17 @@ OtherStatement ::= Designator:d ASSIGNMENT Expr:e SEMI
 						parser.report_semanthic_error(eleft + " : Not implemented.", null);
 					}
 				:}
-				| BREAK SEMI
+				| BREAK:b {: Code.putJump(0); if(breakPointsStack.empty()) { parser.report_error(bleft + " : Nowhere to break!", null); } else { breakPointsStack.peek().addLast(Code.pc - 2); } :} SEMI
 				| RETURN SEMI {: Code.put(Code.exit); Code.put(Code.return_); returnExists = true; :}
 				| RETURN Expr:e SEMI {: if(assignableTo(e, currentMeth.getType())){ Code.put(Code.exit); Code.put(Code.return_); returnExists = true; } else { parser.report_semanthic_error(eleft + " : Type not assignable to return type.", null); } :}
 				| LBRACE StatementList RBRACE {: if(parser.inMain) { parser.nStatementBlocks++; parser.nSimpleMainStatements--; }:}
-				| DO Statement WHILE ParensAndCondition SEMI | DO Statement WHILE error RPAREN
+				| Do:topAdr Statement WHILE ParensAndCondition {: Code.putJump(topAdr); patchCondition(true); :} SEMI | Do Statement WHILE error RPAREN
 				| SEMI
 				;
 
-LoopHeader ::= WHILE {: RESULT = Code.pc; :} ParensAndCondition | WHILE error RPAREN
+LoopHeader ::= WHILE {: RESULT = Code.pc; :} ParensAndCondition {: breakPointsStack.push(new LinkedList<Integer>()); :} | WHILE error RPAREN
 			;
-Do ::= DO {: RESULT = Code.pc; :};
+Do ::= DO {: breakPointsStack.push(new LinkedList<Integer>()); RESULT = Code.pc; :};
 
 			
 ActPars ::= ActPars:n COMMA Expr:pt {: RESULT = n + 1; if(!assignableTo(getLocalAt(currentMethBeingCalled, RESULT-1).getType(), pt)){parser.report_semanthic_error(ptleft +" : Parameter " + RESULT + " does not match required type" + currentMethBeingCalled.getName() + " " + currentThis.getName() + " " + thisForMethCall.getName(), null);} :} 

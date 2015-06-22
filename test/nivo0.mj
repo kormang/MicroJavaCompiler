@@ -16,25 +16,39 @@ program ProgramA
 		j = 1;
 		k = 1;
 		l = 5;
-		a = new A;
-		a.y = 5;
-		a.arr = new int[a.y];
 		
-		while(i < a.y){
-			a.arr[i] = i + 1;
-			i++;
-		}
-		i = 0;
-		while(i < a.y){
-			print(a.arr[i]);
-			
-			i++;
-			if( i > 3){
-				print('!');
+		do {
+		
+			a = new A;
+			a.y = 5;
+			a.arr = new int[a.y];
+			i = l / 2;
+			while(i < a.y){
+				a.arr[i] = i + 1;
+				i++;
 			}
+			i = 0;
+			while(i < a.y){
+				print(a.arr[i]);
+				
+				i++;
+				if( i > 3){
+					print('!');
+				}
+				print('\n');
+			}
+			
+			read(k);
+			if(k == 0)
+				break;
+			
+			l = l / 2;
+			print('l');
+			print('=');
+			print(l);
 			print('\n');
-		}
-		
+			
+		} while(l > 0);
 		
 
 	}
