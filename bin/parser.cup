@@ -404,7 +404,7 @@ action code {:
 :}
 
 //keyword terminals
-terminal PROGRAM, PRINT, RETURN, VOID, CLASS, EXTENDS, NEW, IF, ELSE, WHILE, READ ;
+terminal PROGRAM, PRINT, RETURN, VOID, CLASS, EXTENDS, NEW, IF, ELSE, WHILE, READ, LEN ;
 terminal BREAK, DO, CONST ;
 
 //operator terminals
@@ -844,6 +844,7 @@ MethodCall ::= Designator:d
 			popThisForMethCallStack();
 			popCurrentThis();
 		:}
+		| LEN LPAREN Designator:d RPAREN {: Code.load(d); Code.put(Code.arraylength); RESULT = Tab.intType; :}
 		;
 		
 ParensAndActPars ::= LPAREN RPAREN {: RESULT = (thisForMethCall != Tab.noObj) ? new Integer(1) : new Integer(0); :} | LPAREN ActPars:n RPAREN {: RESULT = n; :} ;

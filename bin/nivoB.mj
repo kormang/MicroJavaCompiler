@@ -17,12 +17,14 @@ program ProgramB
 		while(i<pi) { read(x[i]); y[i]=x[i]+pi*(1-e); i++; };
 		a = "test";
 		read(a);
+		
 		if('a'==c || x[2] < 4) b = true;
 		else{
-		x[0] = add(x[1], x[2]);
-		x[0]--;
-		b = false;
+			x[0] = add(x[1], x[2]);
+			x[0]--;
+			b = false;
 		}
-		while(i > e) { print(len(a)); i--}
+		
+		while(i > e) { print(len(a)); i--; }
 	}
 }

@@ -90,6 +90,7 @@ import org.apache.commons.lang.StringEscapeUtils;
 "break"    { return new_symbol(sym.BREAK, yytext()); }
 "do"       { return new_symbol(sym.DO, yytext()); }
 "const"    { return new_symbol(sym.CONST, yytext()); }
+"len"	   { return new_symbol(sym.LEN, yytext()); }
 
 // operators
 
