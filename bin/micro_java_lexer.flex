@@ -127,7 +127,7 @@ import org.apache.commons.lang.StringEscapeUtils;
 \'([\x20-z]|\\[nbtr])\' { return new_symbol(sym.CHAR_LITERAL, Character.valueOf(extract_char_literal(yytext()))); }
 \"([^\"]|(\\\"))*\" { if(yytext().length() == 2) return new_symbol(sym.STRING_LITERAL, ""); else { String lit = StringEscapeUtils.unescapeJava(yytext().substring(1, yytext().length()-1)); return new_symbol(sym.STRING_LITERAL, lit);} }
 
-([a-z]|[A-Z])[a-z|A-Z|0-9|_]*  { return new_symbol(sym.IDENT, yytext()); }
+([a-z]|[A-Z]|_)[a-z|A-Z|0-9|_]*  { return new_symbol(sym.IDENT, yytext()); }
 
 .   { 	System.err.println("Lexical error:"+(yyline+1)+":"+(yycolumn)+": "+yytext()); return new_symbol(sym.INVALID, yytext()); }
 

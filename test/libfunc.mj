@@ -1,0 +1,22 @@
+program ProgramA
+{
+	void __strfprint(string s, int len) int i; 
+	{
+		while( i < len ) {
+			print(s[i]);
+			i++;
+		}
+	}
+	
+	void __strfread(string s, int len) int i; char c; {
+		while ( i < len) {
+			read(c);
+			if(c != '\n' && c != '\r')
+				s[i] = c;
+			else
+				break;
+				
+			i++;
+		}
+	}
+}

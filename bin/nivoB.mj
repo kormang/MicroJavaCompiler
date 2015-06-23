@@ -1,0 +1,28 @@
+program ProgramB
+	int x[],y[];
+	int i;
+	const int pi = 3, e = 2;
+	string a;
+	bool b;
+	const char c = 'c';
+{
+	int add(int x, int y) int a,b; bool c;
+	{ return x + y; }
+	
+	void main()
+	{
+		x = new int[3];
+		y = new int[3];
+		i=0;
+		while(i<pi) { read(x[i]); y[i]=x[i]+pi*(1-e); i++; };
+		a = "test";
+		read(a);
+		if('a'==c || x[2] < 4) b = true;
+		else{
+		x[0] = add(x[1], x[2]);
+		x[0]--;
+		b = false;
+		}
+		while(i > e) { print(len(a)); i--}
+	}
+}
